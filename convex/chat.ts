@@ -5,6 +5,9 @@ import { components } from "./_generated/api";
 import { saveMessage } from "@convex-dev/agent";
 import { myAgent } from "./agent";
 
+/**
+ * Returns all chats ordered by creation date (newest first).
+ */
 export const listChats = query({
     args: {},
     handler: async (ctx) => {
@@ -13,6 +16,10 @@ export const listChats = query({
     },
 });
 
+/**
+ * Creates a new chat with an auto-generated name based on timestamp.
+ * @returns The ID of the newly created chat.
+ */
 export const createChat = mutation({
     args: {},
     handler: async (ctx) => {
@@ -24,6 +31,10 @@ export const createChat = mutation({
     },
 });
 
+/**
+ * Retrieves all messages for a specific chat in chronological order.
+ * Uses the 'by_chat' index for efficient querying.
+ */
 export const getMessages = query({
     args: {
         chatId: v.id("chats"),
@@ -38,6 +49,11 @@ export const getMessages = query({
     },
 });
 
+/**
+ * Saves a user message and triggers AI response generation.
+ * The message is immediately saved to the database, then processMessage
+ * is scheduled to run asynchronously to generate the AI response.
+ */
 export const sendMessage = mutation({
     args: {
         chatId: v.id("chats"),
@@ -59,6 +75,18 @@ export const sendMessage = mutation({
     },
 });
 
+/**
+ * Processes a user message and generates an AI response.
+ * 
+ * This internal action:
+ * - Gets or creates an agent thread for the chat (one thread per chat)
+ * - Saves the message to the agent thread for conversation context
+ * - Generates a response using the configured AI agent
+ * - Extracts the response text and saves it to the database
+ * 
+ * The agent maintains conversation history within each thread, allowing
+ * for context-aware responses across multiple messages.
+ */
 export const processMessage = internalAction({
     args: {
         chatId: v.id("chats"),
@@ -130,6 +158,10 @@ export const processMessage = internalAction({
     },
 });
 
+/**
+ * Retrieves a single chat by its ID.
+ * Used internally to check chat existence and access threadId.
+ */
 export const getChat = query({
     args: {
         chatId: v.id("chats"),
@@ -139,6 +171,11 @@ export const getChat = query({
     },
 });
 
+/**
+ * Updates a chat with its associated agent thread ID.
+ * This links the chat to the Convex Agent thread system, allowing
+ * the agent to maintain conversation context for this chat.
+ */
 export const updateChatThreadId = mutation({
     args: {
         chatId: v.id("chats"),
@@ -149,7 +186,11 @@ export const updateChatThreadId = mutation({
     },
 });
 
-
+/**
+ * Saves the AI assistant's response to the messages table.
+ * Called after the agent generates a response to store it
+ * alongside user messages in the chat.
+ */
 export const saveAgentResponse = mutation({
     args: {
         chatId: v.id("chats"),

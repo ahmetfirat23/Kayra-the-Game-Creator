@@ -19,7 +19,7 @@ export default function Home() {
   const sendMessage = useMutation(api.chat.sendMessage);
   const createChat = useMutation(api.chat.createChat);
 
-  // Select the first chat by default when chats load
+  // Auto-select the first chat when chats are loaded and none is selected
   const firstChatId = chats.length > 0 ? chats[0]._id : null;
   useEffect(() => {
     if (firstChatId && !selectedChatId) {
@@ -27,6 +27,10 @@ export default function Home() {
     }
   }, [firstChatId, selectedChatId]);
 
+  /**
+   * Creates a new chat and automatically selects it.
+   * Shows loading state during creation.
+   */
   const handleCreateChat = async () => {
     setIsCreatingChat(true);
     try {
@@ -37,6 +41,10 @@ export default function Home() {
     }
   };
 
+  /**
+   * Handles message submission: validates input, clears the input field,
+   * and sends the message to the selected chat.
+   */
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !selectedChatId) return;
