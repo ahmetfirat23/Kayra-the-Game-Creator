@@ -1,17 +1,21 @@
 import { Agent } from "@convex-dev/agent";
 import { components } from "./_generated/api";
-import { openai } from "@ai-sdk/openai";
+import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 
 /**
- * AI agent configuration for 3D mobile game generation.
- * This agent builds 3D games using Expo Router and react-three-fiber.
- * Tools are provided dynamically via Freestyle MCP when the agent runs.
+ * Create an AI agent with a custom API key (for BYOK support).
+ * @param apiKey - User's OpenAI API key, or undefined to use system key
  */
-export const myAgent = new Agent(components.agent, {
-    name: "Kayra, the Game Creator",
-    languageModel: openai("gpt-4o-mini"),
-    instructions: `You are Kayra, the Game Creator - an expert 3D mobile game builder specialized in creating interactive 3D games using Expo Router, React Native, and react-three-fiber.
+export function createAgent(apiKey?: string) {
+    const openai = createOpenAI({
+        apiKey: apiKey || process.env.OPENAI_API_KEY,
+    });
+    
+    return new Agent(components.agent, {
+        name: "Kayra, the Game Creator",
+        languageModel: openai("gpt-5-mini"),
+        instructions: `You are Kayra, the Game Creator - an expert 3D mobile game builder specialized in creating interactive 3D games using Expo Router, React Native, and react-three-fiber.
 
 CRITICAL RULES:
 1. For NEW game requests (no game files exist yet), START WITH A DESIGN DOCUMENT - get user approval before coding!
@@ -199,7 +203,8 @@ IMPORTANT:
 - Files must be valid TypeScript/React Native code that runs on mobile
 - DO NOT output code blocks or file contents - users see the result in the preview
 - Keep explanations brief and focused on what the game does, not how it's coded`,
-});
+    });
+}
 
 /**
  * Create agent tools that wrap Freestyle MCP client.

@@ -6,24 +6,68 @@ import { saveMessage, listUIMessages, syncStreams, vStreamArgs } from "@convex-d
 import { paginationOptsValidator } from "convex/server";
 
 /**
- * Returns all chats ordered by creation date (newest first).
+ * Returns all chats for the current user, ordered by creation date (newest first).
  */
 export const listChats = query({
     args: {},
     handler: async (ctx) => {
-        const chats = await ctx.db.query("chats").order("desc").collect();
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) {
+            return [];
+        }
+
+        // Get user from database
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+            .first();
+
+        if (!user) {
+            return [];
+        }
+
+        const chats = await ctx.db
+            .query("chats")
+            .withIndex("by_user", (q) => q.eq("userId", user._id))
+            .order("desc")
+            .collect();
         return chats;
     },
 });
 
 /**
- * Creates a new chat. The actual Freestyle repo creation happens in a separate action.
+ * Creates a new chat for the current user. The actual Freestyle repo creation happens in a separate action.
  * @returns The chatId
  */
 export const createChat = mutation({
     args: {},
     handler: async (ctx) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) {
+            throw new Error("Not authenticated");
+        }
+
+        // Get or create user
+        let user = await ctx.db
+            .query("users")
+            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+            .first();
+
+        if (!user) {
+            // Create user if they don't exist yet
+            const userId = await ctx.db.insert("users", {
+                clerkId: identity.subject,
+                email: identity.email || "",
+                name: identity.name,
+            });
+            user = await ctx.db.get(userId);
+            if (!user) {
+                throw new Error("Failed to create user");
+            }
+        }
+
         const chatId = await ctx.db.insert("chats", {
+            userId: user._id,
             name: `3D Game ${Date.now()}`,
             createdAt: Date.now(),
             repoId: "pending", // Placeholder until repo is created
@@ -232,6 +276,7 @@ export const sendMessage = mutation({
             threadId,
             promptMessageId: messageId,
             repoId: chat.repoId, // Pass repoId for dev server access
+            userId: chat.userId!, // Pass userId for API key lookup
         });
     },
 });
@@ -254,10 +299,23 @@ export const processMessage = internalAction({
         threadId: v.string(),
         promptMessageId: v.string(),
         repoId: v.string(),
+        userId: v.id("users"),
     },
     handler: async (ctx, args) => {
+        // Get user's API key
+        const user = await ctx.runQuery(internal.chat.getUser, { userId: args.userId });
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        // Use user's API key if they have one, otherwise use system key (for admin)
+        const apiKey = user.isAdmin ? process.env.OPENAI_API_KEY : user.openaiApiKey;
+        if (!apiKey) {
+            throw new Error("No API key configured. Please add your OpenAI API key in Settings.");
+        }
+
         // Import dependencies
-        const { myAgent, createFreestyleTools } = await import("./agent");
+        const { createAgent, createFreestyleTools } = await import("./agent");
         const { stepCountIs } = await import("@convex-dev/agent");
         const { freestyle } = await import("../lib/freestyle");
         const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
@@ -276,8 +334,11 @@ export const processMessage = internalAction({
         
         console.log(`✅ Created ${Object.keys(freestyleTools).length} Freestyle tools`);
 
+        // Create agent with user's API key
+        const agent = createAgent(apiKey);
+
         // Use the agent's streamText WITH our custom Freestyle tools
-        const result = await myAgent.streamText(
+        const result = await agent.streamText(
             ctx,
             { threadId: args.threadId },
             {
@@ -371,5 +432,66 @@ export const saveAgentResponse = internalMutation({
             text: args.text,
             sender: "assistant",
         });
+    },
+});
+
+/**
+ * Get user by ID (for API key lookup)
+ */
+export const getUser = internalQuery({
+    args: {
+        userId: v.id("users"),
+    },
+    handler: async (ctx, args) => {
+        return await ctx.db.get(args.userId);
+    },
+});
+
+/**
+ * Delete a chat and all its messages
+ */
+export const deleteChat = mutation({
+    args: {
+        chatId: v.id("chats"),
+    },
+    handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) {
+            throw new Error("Not authenticated");
+        }
+
+        // Get the chat
+        const chat = await ctx.db.get(args.chatId);
+        if (!chat) {
+            throw new Error("Chat not found");
+        }
+
+        // Get user to verify ownership
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+            .first();
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        // Verify user owns this chat
+        if (chat.userId !== user._id) {
+            throw new Error("Not authorized to delete this chat");
+        }
+
+        // Delete all messages in this chat
+        const messages = await ctx.db
+            .query("messages")
+            .withIndex("by_chat", (q) => q.eq("chatId", args.chatId))
+            .collect();
+
+        for (const message of messages) {
+            await ctx.db.delete(message._id);
+        }
+
+        // Delete the chat
+        await ctx.db.delete(args.chatId);
     },
 });

@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { useSmoothText, type UIMessage } from "@convex-dev/agent/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import { FreestyleDevServer } from "freestyle-sandboxes/react/dev-server";
 import { requestDevServer } from "../lib/freestyle-actions";
 import ReactMarkdown from "react-markdown";
+import { UserButton } from "@clerk/nextjs";
 
 /**
  * Message component that renders a single message with smooth text streaming.
@@ -89,8 +90,25 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [selectedChatId, setSelectedChatId] = useState<Id<"chats"> | null>(null);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [savingKey, setSavingKey] = useState(false);
   
   const chats = useQuery(api.chat.listChats) || [];
+  const apiKeyStatus = useQuery(api.users.getApiKey);
+  const syncUser = useMutation(api.users.syncUser);
+  const updateApiKey = useAction(api.users.updateApiKey); // Action, not mutation
+  const deleteApiKey = useMutation(api.users.deleteApiKey);
+  const deleteChat = useMutation(api.chat.deleteChat);
+
+  // Sync user on mount (create user record if doesn't exist)
+  useEffect(() => {
+    console.log("Syncing user...");
+    syncUser()
+      .then((userId) => console.log("User synced:", userId))
+      .catch((err) => console.error("Failed to sync user:", err));
+  }, [syncUser]);
   
   // Get chat to retrieve threadId and repoId
   const selectedChat = useQuery(
@@ -143,12 +161,78 @@ export default function Home() {
    * Shows loading state during creation.
    */
   const handleCreateChat = async () => {
+    // Check if user has API key
+    if (apiKeyStatus && !apiKeyStatus.hasKey && !apiKeyStatus.isAdmin) {
+      setShowApiKeyModal(true);
+      return;
+    }
+
     setIsCreatingChat(true);
     try {
       const chatId = await createChat();
       setSelectedChatId(chatId);
     } finally {
       setIsCreatingChat(false);
+    }
+  };
+
+  const handleSaveApiKey = async () => {
+    if (!apiKey.trim()) return;
+    
+    setSavingKey(true);
+    try {
+      await updateApiKey({ apiKey });
+      setShowApiKeyModal(false);
+      setApiKey("");
+      alert("✅ API key validated and saved successfully!");
+    } catch (error) {
+      console.error("Failed to save API key:", error);
+      // Extract the actual error message from Convex error format
+      let errorMessage = "Failed to save API key";
+      if (error instanceof Error) {
+        // Look for "Uncaught Error: " pattern which contains the actual error
+        const uncaughtMatch = error.message.match(/Uncaught Error: (.+?)(?:\n|$)/);
+        if (uncaughtMatch) {
+          errorMessage = uncaughtMatch[1];
+        } else {
+          // Fallback: try to extract after CONVEX wrapper
+          const convexMatch = error.message.match(/\[CONVEX A\([^)]+\)\](?:\s*\[Request ID: [^\]]+\])?\s*(.+?)(?:\n|$)/);
+          errorMessage = convexMatch ? convexMatch[1] : error.message;
+        }
+      }
+      alert(`❌ ${errorMessage}`);
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
+  const handleDeleteApiKey = async () => {
+    if (!confirm("Delete your API key? You'll need to add it again to create games.")) return;
+    
+    setSavingKey(true);
+    try {
+      await deleteApiKey();
+      setShowApiKeyModal(false);
+      alert("API key deleted successfully!");
+    } catch (error) {
+      console.error("Failed to delete API key:", error);
+      alert("Failed to delete API key");
+    } finally {
+      setSavingKey(false);
+    }
+  };
+
+  const handleDeleteChat = async (chatId: Id<"chats">) => {
+    if (!confirm("Delete this game project? This cannot be undone.")) return;
+    
+    try {
+      await deleteChat({ chatId });
+      if (selectedChatId === chatId) {
+        setSelectedChatId(null);
+      }
+    } catch (error) {
+      console.error("Failed to delete chat:", error);
+      alert("Failed to delete chat");
     }
   };
 
@@ -159,6 +243,12 @@ export default function Home() {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !selectedChatId || isStreaming) return;
+    
+    // Check if user has API key
+    if (apiKeyStatus && !apiKeyStatus.hasKey && !apiKeyStatus.isAdmin) {
+      setShowApiKeyModal(true);
+      return;
+    }
     
     // Check if repo is ready
     if (selectedChat?.repoId === "pending") {
@@ -179,10 +269,10 @@ export default function Home() {
 
   return (
     <main className="flex flex-col h-screen bg-gray-900 text-white">
-      {/* Top Bar with Brand, Chat Selector, and Preview Title */}
+      {/* Top Bar with Brand, Chat Selector, Preview Title, and User */}
       <div className="h-16 px-4 border-b border-gray-700 flex items-center justify-between gap-4">
         {/* Left: Brand + Chat Controls */}
-        <div className="flex items-center gap-4 flex-1">
+        <div className="flex items-center gap-4 flex-1 min-w-0">
           <div className="flex items-center gap-2 whitespace-nowrap">
             <div className="text-2xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent">
               Kayra
@@ -202,6 +292,15 @@ export default function Home() {
                 </option>
               ))}
             </select>
+            {selectedChatId && (
+              <button
+                onClick={() => handleDeleteChat(selectedChatId)}
+                className="bg-red-700 hover:bg-red-900 px-3 py-2 rounded text-sm"
+                title="Delete chat"
+              >
+                🗑️
+              </button>
+            )}
             <button
               onClick={handleCreateChat}
               disabled={isCreatingChat}
@@ -212,12 +311,100 @@ export default function Home() {
           </div>
         </div>
         
-        {/* Right: Preview Title */}
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-bold">Live Preview</span>
-          <span className="text-xl">🎮</span>
+        {/* Right: Preview Title + User Menu */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-bold">Live Preview</span>
+            <span className="text-xl">🎮</span>
+          </div>
+          
+          <div className="h-8 w-px bg-gray-700"></div>
+          
+          <div className="flex items-center gap-3">
+            {apiKeyStatus && !apiKeyStatus.isAdmin && (
+              <button
+                onClick={() => setShowApiKeyModal(true)}
+                className={`text-xs px-3 py-1 rounded font-bold ${
+                  apiKeyStatus.hasKey
+                    ? "bg-gray-700 hover:bg-gray-600 text-gray-300"
+                    : "bg-yellow-600 hover:bg-yellow-700 text-white"
+                }`}
+              >
+                {apiKeyStatus.hasKey ? "Update API Key" : "Add API Key"}
+              </button>
+            )}
+            <UserButton />
+          </div>
         </div>
       </div>
+
+      {/* API Key Modal */}
+      {showApiKeyModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-bold mb-2">
+              {apiKeyStatus?.hasKey ? "Update" : "Add"} OpenAI API Key
+            </h2>
+            <p className="text-sm text-gray-400 mb-4">
+              Your API key is used to power Kayra&apos;s AI. Get one at{" "}
+              <a
+                href="https://platform.openai.com/api-keys"
+                target="_blank"
+                className="text-blue-400 underline"
+              >
+                openai.com
+              </a>
+            </p>
+
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <input
+                  type={showKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-..."
+                  className="flex-1 bg-gray-700 border border-gray-600 rounded px-4 py-2 focus:outline-none focus:border-blue-500"
+                  autoFocus
+                />
+                <button
+                  onClick={() => setShowKey(!showKey)}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded"
+                >
+                  {showKey ? "👁️" : "👁️‍🗨️"}
+                </button>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setShowApiKeyModal(false);
+                    setApiKey("");
+                  }}
+                  className="flex-1 bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded"
+                >
+                  Cancel
+                </button>
+                {apiKeyStatus?.hasKey && (
+                  <button
+                    onClick={handleDeleteApiKey}
+                    disabled={savingKey}
+                    className="flex-1 bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 disabled:cursor-not-allowed px-4 py-2 rounded"
+                  >
+                    Delete Key
+                  </button>
+                )}
+                <button
+                  onClick={handleSaveApiKey}
+                  disabled={!apiKey.trim() || savingKey}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed px-4 py-2 rounded font-bold"
+                >
+                  {savingKey ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden">
