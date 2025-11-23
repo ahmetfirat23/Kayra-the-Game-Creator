@@ -5,6 +5,7 @@ export default defineSchema({
     chats: defineTable({
         name: v.string(),
         createdAt: v.number(),
+        threadId: v.optional(v.string()),
     }),
     messages: defineTable({
         chatId: v.id("chats"),
