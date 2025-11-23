@@ -2,7 +2,8 @@ import { query, mutation, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import { components } from "./_generated/api";
-import { saveMessage } from "@convex-dev/agent";
+import { saveMessage, listUIMessages, syncStreams, vStreamArgs } from "@convex-dev/agent";
+import { paginationOptsValidator } from "convex/server";
 import { myAgent } from "./agent";
 
 /**
@@ -34,6 +35,7 @@ export const createChat = mutation({
 /**
  * Retrieves all messages for a specific chat in chronological order.
  * Uses the 'by_chat' index for efficient querying.
+ * @deprecated Use listThreadMessages for streaming support.
  */
 export const getMessages = query({
     args: {
@@ -50,9 +52,48 @@ export const getMessages = query({
 });
 
 /**
+ * Retrieves messages for a thread with streaming support.
+ * Returns both regular messages and streaming deltas, allowing clients
+ * to see messages update in real-time as they're generated.
+ */
+export const listThreadMessages = query({
+    args: {
+        chatId: v.id("chats"),
+        paginationOpts: paginationOptsValidator,
+        streamArgs: vStreamArgs,
+    },
+    handler: async (ctx, args) => {
+        // Get the chat to retrieve the threadId
+        const chat = await ctx.db.get(args.chatId);
+        if (!chat || !chat.threadId) {
+            return {
+                page: [],
+                isDone: true,
+                continueCursor: "",
+            };
+        }
+
+        // Fetch regular non-streaming messages
+        const paginated = await listUIMessages(ctx, components.agent, {
+            threadId: chat.threadId,
+            paginationOpts: args.paginationOpts,
+        });
+
+        // Fetch streaming deltas
+        const streams = await syncStreams(ctx, components.agent, {
+            threadId: chat.threadId,
+            streamArgs: args.streamArgs,
+        });
+
+        return { ...paginated, streams };
+    },
+});
+
+/**
  * Saves a user message and triggers AI response generation.
- * The message is immediately saved to the database, then processMessage
- * is scheduled to run asynchronously to generate the AI response.
+ * The message is saved to both our database and the agent thread immediately
+ * so it appears in the UI right away. Then processMessage is scheduled to
+ * generate the AI response.
  */
 export const sendMessage = mutation({
     args: {
@@ -67,34 +108,8 @@ export const sendMessage = mutation({
             sender: "user",
         });
 
-        // Schedule action to handle agent thread and response
-        await ctx.scheduler.runAfter(0, internal.chat.processMessage, {
-            chatId: args.chatId,
-            text: args.text,
-        });
-    },
-});
-
-/**
- * Processes a user message and generates an AI response.
- * 
- * This internal action:
- * - Gets or creates an agent thread for the chat (one thread per chat)
- * - Saves the message to the agent thread for conversation context
- * - Generates a response using the configured AI agent
- * - Extracts the response text and saves it to the database
- * 
- * The agent maintains conversation history within each thread, allowing
- * for context-aware responses across multiple messages.
- */
-export const processMessage = internalAction({
-    args: {
-        chatId: v.id("chats"),
-        text: v.string(),
-    },
-    handler: async (ctx, args) => {
-        // Get chat to check for threadId
-        const chat = await ctx.runQuery(api.chat.getChat, { chatId: args.chatId });
+        // Get or create thread for this chat
+        const chat = await ctx.db.get(args.chatId);
         if (!chat) {
             throw new Error("Chat not found");
         }
@@ -107,54 +122,57 @@ export const processMessage = internalAction({
                 title: chat.name || "Chat Conversation",
             });
             threadId = thread._id;
-            await ctx.runMutation(api.chat.updateChatThreadId, {
-                chatId: args.chatId,
-                threadId,
-            });
+            await ctx.db.patch(args.chatId, { threadId });
         }
 
-        // Save message to agent thread and get messageId
+        // Save message to agent thread immediately so it appears in UI right away
         const { messageId } = await saveMessage(ctx, components.agent, {
             threadId,
             prompt: args.text,
         });
 
-        // Generate agent response
-        await myAgent.generateText(ctx, { threadId }, { promptMessageId: messageId });
-
-        // Get the messages from the thread to extract the response
-        const threadMessagesResult = await ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
-            threadId,
-            order: "desc",
-        });
-
-        // Extract the text response from the last assistant message
-        let responseText = "";
-        const allMessages = threadMessagesResult.page;
-        const lastAssistantMessage = allMessages.find((msg) => {
-            if (msg.message && typeof msg.message === "object" && "role" in msg.message) {
-                return msg.message.role === "assistant";
-            }
-            return false;
-        });
-
-        if (lastAssistantMessage?.message && typeof lastAssistantMessage.message === "object" && "content" in lastAssistantMessage.message) {
-            const content = lastAssistantMessage.message.content;
-            if (typeof content === "string") {
-                responseText = content;
-            } else if (Array.isArray(content)) {
-                responseText = content
-                    .filter((part): part is { type: "text"; text: string } => part.type === "text")
-                    .map((part) => part.text)
-                    .join("");
-            }
-        }
-
-        // Save agent response to database
-        await ctx.runMutation(api.chat.saveAgentResponse, {
+        // Schedule action to generate AI response
+        await ctx.scheduler.runAfter(0, internal.chat.processMessage, {
             chatId: args.chatId,
-            text: responseText || "I'm sorry, I couldn't generate a response.",
+            threadId,
+            promptMessageId: messageId,
         });
+    },
+});
+
+/**
+ * Processes a user message and generates an AI response with streaming.
+ * 
+ * This internal action:
+ * - Uses the messageId passed from sendMessage (message already saved to thread)
+ * - Streams the response using the configured AI agent with saveStreamDeltas enabled
+ * - Response chunks are saved as deltas to the database, allowing clients to
+ *   subscribe and see updates in real-time as the response is generated
+ * 
+ * The agent maintains conversation history within each thread, allowing
+ * for context-aware responses across multiple messages.
+ */
+export const processMessage = internalAction({
+    args: {
+        chatId: v.id("chats"),
+        threadId: v.string(),
+        promptMessageId: v.string(),
+    },
+    handler: async (ctx, args) => {
+        // Generate agent response with streaming
+        // saveStreamDeltas saves chunks to the database as they're generated,
+        // allowing clients to subscribe and see updates in real-time
+        await myAgent.streamText(
+            ctx,
+            { threadId: args.threadId },
+            { promptMessageId: args.promptMessageId },
+            {
+                saveStreamDeltas: {
+                    chunking: "word",
+                    throttleMs: 100,
+                },
+            }
+        );
     },
 });
 
@@ -190,6 +208,7 @@ export const updateChatThreadId = mutation({
  * Saves the AI assistant's response to the messages table.
  * Called after the agent generates a response to store it
  * alongside user messages in the chat.
+ * @deprecated No longer needed with streaming - messages are saved via deltas.
  */
 export const saveAgentResponse = mutation({
     args: {

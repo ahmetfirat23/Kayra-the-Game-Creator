@@ -2,8 +2,40 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
+import { useSmoothText, type UIMessage } from "@convex-dev/agent/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
+
+/**
+ * Message component that renders a single message with smooth text streaming.
+ * Uses useSmoothText to animate text as it streams in for a better UX.
+ */
+function MessageComponent({ message }: { message: UIMessage }) {
+  const [visibleText] = useSmoothText(message.text, {
+    startStreaming: message.status === "streaming",
+  });
+
+  const isUser = message.role === "user";
+  const isStreaming = message.status === "streaming";
+
+  return (
+    <div 
+      className={`p-3 rounded-lg max-w-[80%] ${
+        isUser
+        ? "bg-blue-600 self-end ml-auto"
+        : "bg-gray-700"
+      }`}
+    >
+      <div className="text-xs text-gray-300 mb-1 uppercase font-bold flex items-center gap-2">
+        <span>{isUser ? "user" : "assistant"}</span>
+        {isStreaming && (
+          <span className="text-xs animate-pulse">●</span>
+        )}
+      </div>
+      <div>{visibleText}</div>
+    </div>
+  );
+}
 
 export default function Home() {
   const [input, setInput] = useState("");
@@ -11,10 +43,27 @@ export default function Home() {
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   
   const chats = useQuery(api.chat.listChats) || [];
-  const messages = useQuery(
-    api.chat.getMessages,
+  
+  // Get chat to retrieve threadId for streaming
+  const selectedChat = useQuery(
+    api.chat.getChat,
     selectedChatId ? { chatId: selectedChatId } : "skip"
-  ) || [];
+  );
+
+  // Get streaming messages
+  const messagesData = useQuery(
+    api.chat.listThreadMessages,
+    selectedChatId && selectedChat?.threadId 
+      ? { 
+          chatId: selectedChatId,
+          paginationOpts: { numItems: 50, cursor: null },
+          streamArgs: { kind: "list" as const }
+        }
+      : "skip"
+  );
+
+  // Extract messages from the paginated result
+  const messages = messagesData?.page || [];
   
   const sendMessage = useMutation(api.chat.sendMessage);
   const createChat = useMutation(api.chat.createChat);
@@ -80,22 +129,10 @@ export default function Home() {
 
         {/* Messages */}
         <div className="flex-1 p-4 overflow-y-auto space-y-4">
-          {selectedChatId ? (
-            messages.length > 0 ? (
+          {selectedChatId && selectedChat?.threadId ? (
+            messages && messages.length > 0 ? (
               messages.map((msg) => (
-                <div 
-                  key={msg._id}
-                  className={`p-3 rounded-lg max-w-[80%] ${
-                    msg.sender === "user"
-                    ? "bg-blue-600 self-end ml-auto"
-                    : "bg-gray-700"
-                  }`}
-                >
-                  <div className="text-xs text-gray-300 mb-1 uppercase font-bold">
-                    {msg.sender}
-                  </div>
-                  {msg.text}
-                </div>
+                <MessageComponent key={msg.id} message={msg} />
               ))
             ) : (
               <div className="text-center text-gray-500 mt-8">
