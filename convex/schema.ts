@@ -6,6 +6,7 @@ export default defineSchema({
         name: v.string(),
         createdAt: v.number(),
         threadId: v.optional(v.string()),
+        repoId: v.optional(v.string()), // Freestyle Git repository ID
     }),
     messages: defineTable({
         chatId: v.id("chats"),

@@ -5,6 +5,8 @@ import { useQuery, useMutation } from "convex/react";
 import { useSmoothText, type UIMessage } from "@convex-dev/agent/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
+import { FreestyleDevServer } from "freestyle-sandboxes/react/dev-server";
+import { requestDevServer } from "../lib/freestyle-actions";
 
 /**
  * Message component that renders a single message with smooth text streaming.
@@ -18,21 +20,45 @@ function MessageComponent({ message }: { message: UIMessage }) {
   const isUser = message.role === "user";
   const isStreaming = message.status === "streaming";
 
+  // Extract tool calls from message parts
+  type MessagePart = { type?: string; output?: string | object; [key: string]: unknown };
+  const toolCalls = (message.parts as MessagePart[] | undefined)?.filter((part) => part.type?.startsWith('tool-')) || [];
+
   return (
     <div 
-      className={`p-3 rounded-lg max-w-[80%] ${
+      className={`p-3 rounded-lg max-w-[90%] ${
         isUser
         ? "bg-blue-600 self-end ml-auto"
         : "bg-gray-700"
       }`}
     >
       <div className="text-xs text-gray-300 mb-1 uppercase font-bold flex items-center gap-2">
-        <span>{isUser ? "user" : "assistant"}</span>
+        <span>{isUser ? "user" : "3d game builder"}</span>
         {isStreaming && (
           <span className="text-xs animate-pulse">●</span>
         )}
       </div>
-      <div>{visibleText}</div>
+      
+      {/* Display text content */}
+      {visibleText && <div className="mb-2">{visibleText}</div>}
+      
+      {/* Display tool calls */}
+      {toolCalls.length > 0 && (
+        <div className="mt-2 space-y-2">
+          {toolCalls.map((tool, idx: number) => (
+            <div key={idx} className="bg-gray-800 p-2 rounded text-xs">
+              <div className="text-blue-300 font-mono mb-1">
+                🔧 {tool.type ? tool.type.replace('tool-', '') : 'tool'}
+              </div>
+              {tool.output && (
+                <div className="text-gray-400 whitespace-pre-wrap max-h-32 overflow-y-auto">
+                  {typeof tool.output === 'string' ? tool.output : JSON.stringify(tool.output, null, 2)}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -44,7 +70,7 @@ export default function Home() {
   
   const chats = useQuery(api.chat.listChats) || [];
   
-  // Get chat to retrieve threadId for streaming
+  // Get chat to retrieve threadId and repoId
   const selectedChat = useQuery(
     api.chat.getChat,
     selectedChatId ? { chatId: selectedChatId } : "skip"
@@ -53,9 +79,9 @@ export default function Home() {
   // Get streaming messages
   const messagesData = useQuery(
     api.chat.listThreadMessages,
-    selectedChatId && selectedChat?.threadId 
+    selectedChat?.threadId 
       ? { 
-          chatId: selectedChatId,
+          threadId: selectedChat.threadId,
           paginationOpts: { numItems: 50, cursor: null },
           streamArgs: { kind: "list" as const }
         }
@@ -77,14 +103,14 @@ export default function Home() {
   }, [firstChatId, selectedChatId]);
 
   /**
-   * Creates a new chat and automatically selects it.
+   * Creates a new chat with Freestyle repo and automatically selects it.
    * Shows loading state during creation.
    */
   const handleCreateChat = async () => {
     setIsCreatingChat(true);
     try {
-      const newChatId = await createChat();
-      setSelectedChatId(newChatId);
+      const chatId = await createChat();
+      setSelectedChatId(chatId);
     } finally {
       setIsCreatingChat(false);
     }
@@ -97,20 +123,34 @@ export default function Home() {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !selectedChatId) return;
+    
+    // Check if repo is ready
+    if (selectedChat?.repoId === "pending") {
+      alert("Repository is still being created. Please wait a moment...");
+      return;
+    }
+    
     const messageText = input;
     setInput("");
-    await sendMessage({ chatId: selectedChatId, text: messageText });
+    
+    try {
+      await sendMessage({ chatId: selectedChatId, text: messageText });
+    } catch (error) {
+      console.error("Failed to send message:", error);
+      alert("Failed to send message. The repository might still be loading.");
+    }
   };
 
   return (
     <main className="flex h-screen bg-gray-900 text-white">
-      <div className="w-full flex flex-col">
+      {/* Chat Panel - 40% */}
+      <div className="w-2/5 flex flex-col border-r border-gray-700">
         {/* Chat dropdown header */}
-        <div className="p-4 border-b border-gray-700 flex items-center gap-4">
+        <div className="p-4 border-b border-gray-700 flex items-center gap-2">
           <select
             value={selectedChatId || ""}
             onChange={(e) => setSelectedChatId(e.target.value as Id<"chats">)}
-            className="bg-gray-800 border border-gray-600 rounded px-4 py-2 focus:outline-none focus:border-blue-500 flex-1"
+            className="bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 flex-1"
           >
             {chats.map((chat) => (
               <option key={chat._id} value={chat._id}>
@@ -121,29 +161,40 @@ export default function Home() {
           <button
             onClick={handleCreateChat}
             disabled={isCreatingChat}
-            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed px-4 py-2 rounded font-bold whitespace-nowrap"
+            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed px-3 py-2 rounded text-sm font-bold whitespace-nowrap"
           >
-            {isCreatingChat ? "Creating..." : "+ New Chat"}
+            {isCreatingChat ? "..." : "+ New"}
           </button>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 p-4 overflow-y-auto space-y-4">
-          {selectedChatId && selectedChat?.threadId ? (
+        <div className="flex-1 p-4 overflow-y-auto space-y-3">
+          {selectedChat?.repoId === "pending" ? (
+            <div className="text-center text-blue-500 mt-8 text-sm animate-pulse">
+              <div className="text-2xl mb-2">⚙️</div>
+              Setting up your 3D game project...
+              <div className="mt-2 text-xs text-gray-400">
+                Creating Git repository and dev server
+              </div>
+            </div>
+          ) : selectedChat && selectedChat.repoId && selectedChat.repoId !== "pending" ? (
             messages && messages.length > 0 ? (
               messages.map((msg) => (
                 <MessageComponent key={msg.id} message={msg} />
               ))
             ) : (
-              <div className="text-center text-gray-500 mt-8">
-                No messages yet. Start the conversation!
+              <div className="text-center text-gray-500 mt-8 text-sm">
+                Ask me to build a 3D game! 🎮
+                <div className="mt-2 text-xs">
+                  Try: &quot;Create a spinning cube game&quot;
+                </div>
               </div>
             )
           ) : (
-            <div className="text-center text-gray-500 mt-8">
+            <div className="text-center text-gray-500 mt-8 text-sm">
               {chats.length === 0 
-                ? "Create your first chat to get started!"
-                : "Select a chat to view messages"}
+                ? "Create your first 3D game project!"
+                : "Select a project to continue"}
             </div>
           )}
         </div>
@@ -154,19 +205,48 @@ export default function Home() {
             <input 
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Type a message..."
-              disabled={!selectedChatId}
-              className="flex-1 bg-gray-800 border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              />
+              placeholder={selectedChat?.repoId === "pending" ? "Setting up project..." : "Describe your 3D game..."}
+              disabled={!selectedChatId || selectedChat?.repoId === "pending"}
+              className="flex-1 bg-gray-800 border-gray-600 rounded p-2 text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            />
             <button
               type="submit"
-              disabled={!selectedChatId}
-              className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-700 disabled:cursor-not-allowed px-4 py-2 rounded font-bold"
+              disabled={!selectedChatId || selectedChat?.repoId === "pending"}
+              className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-700 disabled:cursor-not-allowed px-4 py-2 rounded font-bold text-sm"
             >
               Send
             </button>
           </div>
         </form>
+      </div>
+
+      {/* Preview Panel - 60% */}
+      <div className="w-3/5 flex flex-col">
+        <div className="p-4 border-b border-gray-700">
+          <h2 className="text-lg font-bold">Live Preview 🎮</h2>
+          <p className="text-xs text-gray-400 mt-1">
+            Your 3D game will appear here once the AI starts building
+          </p>
+        </div>
+        <div className="flex-1 bg-gray-950 flex items-center justify-center">
+          {selectedChat?.repoId === "pending" ? (
+            <div className="text-blue-500 text-center animate-pulse">
+              <div className="text-4xl mb-4">⚙️</div>
+              <div className="text-sm">Setting up dev environment...</div>
+              <div className="text-xs text-gray-500 mt-2">This may take 30-60 seconds</div>
+            </div>
+          ) : selectedChat?.repoId ? (
+            <FreestyleDevServer 
+              actions={{ requestDevServer }} 
+              repoId={selectedChat.repoId} 
+            />
+          ) : (
+            <div className="text-gray-600 text-center">
+              <div className="text-4xl mb-4">🎮</div>
+              <div className="text-sm">Create a chat to start building games</div>
+            </div>
+          )}
+        </div>
       </div>
     </main>
   );

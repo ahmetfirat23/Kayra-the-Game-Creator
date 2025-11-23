@@ -11,6 +11,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^2.0.71",
     "@convex-dev/agent": "^0.3.0",
+    "@modelcontextprotocol/sdk": "^1.22.0",
     "ai": "^5.0.98",
     "convex": "^1.29.3",
     "freestyle-sandboxes": "^0.0.97",

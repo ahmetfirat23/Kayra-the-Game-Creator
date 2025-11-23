@@ -1,10 +1,9 @@
-import { query, mutation, internalAction } from "./_generated/server";
+import { query, mutation, internalAction, internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { components } from "./_generated/api";
 import { saveMessage, listUIMessages, syncStreams, vStreamArgs } from "@convex-dev/agent";
 import { paginationOptsValidator } from "convex/server";
-import { myAgent } from "./agent";
 
 /**
  * Returns all chats ordered by creation date (newest first).
@@ -18,17 +17,70 @@ export const listChats = query({
 });
 
 /**
- * Creates a new chat with an auto-generated name based on timestamp.
- * @returns The ID of the newly created chat.
+ * Creates a new chat. The actual Freestyle repo creation happens in a separate action.
+ * @returns The chatId
  */
 export const createChat = mutation({
     args: {},
     handler: async (ctx) => {
         const chatId = await ctx.db.insert("chats", {
-            name: `Chat ${Date.now()}`,
+            name: `3D Game ${Date.now()}`,
             createdAt: Date.now(),
+            repoId: "pending", // Placeholder until repo is created
         });
+        
+        // Schedule action to create the Freestyle repo
+        await ctx.scheduler.runAfter(0, internal.chat.createAndAttachRepo, {
+            chatId,
+        });
+        
         return chatId;
+    },
+});
+
+/**
+ * Internal action to create a Freestyle Git repository and attach it to the chat.
+ * Uses Freestyle's Expo template as the base.
+ */
+export const createAndAttachRepo = internalAction({
+    args: {
+        chatId: v.id("chats"),
+    },
+    handler: async (ctx, args) => {
+        // Import freestyle client dynamically to avoid issues
+        const { freestyle } = await import("../lib/freestyle");
+        
+        const { repoId } = await freestyle.createGitRepository({
+            name: `3D Game ${Date.now()}`,
+            public: true, // Make repo publicly accessible for easy cloning/testing
+            source: {
+                url: "https://github.com/freestyle-sh/freestyle-expo",
+            },
+            devServers: {
+                preset: "expo", // Use Expo preset for dev server configuration
+            },
+        });
+        
+        // Update the chat with the repoId
+        await ctx.runMutation(internal.chat.updateChatWithRepo, {
+            chatId: args.chatId,
+            repoId,
+        });
+        
+        return { repoId };
+    },
+});
+
+/**
+ * Internal mutation to update a chat with its repository ID.
+ */
+export const updateChatWithRepo = internalMutation({
+    args: {
+        chatId: v.id("chats"),
+        repoId: v.string(),
+    },
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.chatId, { repoId: args.repoId });
     },
 });
 
@@ -58,30 +110,20 @@ export const getMessages = query({
  */
 export const listThreadMessages = query({
     args: {
-        chatId: v.id("chats"),
+        threadId: v.string(),
         paginationOpts: paginationOptsValidator,
         streamArgs: vStreamArgs,
     },
     handler: async (ctx, args) => {
-        // Get the chat to retrieve the threadId
-        const chat = await ctx.db.get(args.chatId);
-        if (!chat || !chat.threadId) {
-            return {
-                page: [],
-                isDone: true,
-                continueCursor: "",
-            };
-        }
-
         // Fetch regular non-streaming messages
         const paginated = await listUIMessages(ctx, components.agent, {
-            threadId: chat.threadId,
+            threadId: args.threadId,
             paginationOpts: args.paginationOpts,
         });
 
         // Fetch streaming deltas
         const streams = await syncStreams(ctx, components.agent, {
-            threadId: chat.threadId,
+            threadId: args.threadId,
             streamArgs: args.streamArgs,
         });
 
@@ -114,12 +156,16 @@ export const sendMessage = mutation({
             throw new Error("Chat not found");
         }
 
+        if (!chat.repoId || chat.repoId === "pending") {
+            throw new Error("Repository is still being created. Please wait a moment and try again.");
+        }
+
         let threadId = chat.threadId;
         
         // Create thread if it doesn't exist
         if (!threadId) {
             const thread = await ctx.runMutation(components.agent.threads.createThread, {
-                title: chat.name || "Chat Conversation",
+                title: chat.name || "3D Game Chat",
             });
             threadId = thread._id;
             await ctx.db.patch(args.chatId, { threadId });
@@ -131,11 +177,12 @@ export const sendMessage = mutation({
             prompt: args.text,
         });
 
-        // Schedule action to generate AI response
+        // Schedule action to generate AI response with Freestyle repo access
         await ctx.scheduler.runAfter(0, internal.chat.processMessage, {
             chatId: args.chatId,
             threadId,
             promptMessageId: messageId,
+            repoId: chat.repoId, // Pass repoId for dev server access
         });
     },
 });
@@ -157,15 +204,38 @@ export const processMessage = internalAction({
         chatId: v.id("chats"),
         threadId: v.string(),
         promptMessageId: v.string(),
+        repoId: v.string(),
     },
     handler: async (ctx, args) => {
-        // Generate agent response with streaming
-        // saveStreamDeltas saves chunks to the database as they're generated,
-        // allowing clients to subscribe and see updates in real-time
-        await myAgent.streamText(
+        // Import dependencies
+        const { myAgent, createFreestyleTools } = await import("./agent");
+        const { stepCountIs } = await import("@convex-dev/agent");
+        const { freestyle } = await import("../lib/freestyle");
+        const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
+        const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+
+        // Connect to MCP server once
+        const devServer = await freestyle.requestDevServer({ repoId: args.repoId });
+        const mcpClient = new Client(
+            { name: "game-builder", version: "1.0.0" },
+            { capabilities: {} }
+        );
+        await mcpClient.connect(new StreamableHTTPClientTransport(new URL(devServer.mcpEphemeralUrl)));
+
+        // Create Freestyle tools that use the MCP client
+        const freestyleTools = createFreestyleTools(mcpClient);
+        
+        console.log(`✅ Created ${Object.keys(freestyleTools).length} Freestyle tools`);
+
+        // Use the agent's streamText WITH our custom Freestyle tools
+        const result = await myAgent.streamText(
             ctx,
             { threadId: args.threadId },
-            { promptMessageId: args.promptMessageId },
+            {
+                promptMessageId: args.promptMessageId,
+                tools: freestyleTools,
+                stopWhen: stepCountIs(15),
+            },
             {
                 saveStreamDeltas: {
                     chunking: "word",
@@ -173,8 +243,23 @@ export const processMessage = internalAction({
                 },
             }
         );
+
+        // Get the final text
+        const finalText = await result.text;
+
+        // Close MCP connection
+        await mcpClient.close();
+
+        // Save the final response text to the messages table
+        if (finalText) {
+            await ctx.runMutation(internal.chat.saveAgentResponse, {
+                chatId: args.chatId,
+                text: finalText,
+            });
+        }
     },
 });
+
 
 /**
  * Retrieves a single chat by its ID.
@@ -186,6 +271,23 @@ export const getChat = query({
     },
     handler: async (ctx, args) => {
         return await ctx.db.get(args.chatId);
+    },
+});
+
+/**
+ * Gets a chat ID from a thread ID.
+ * Used by tools to associate files with chats.
+ */
+export const getChatByThreadId = internalQuery({
+    args: {
+        threadId: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const chat = await ctx.db
+            .query("chats")
+            .filter((q) => q.eq(q.field("threadId"), args.threadId))
+            .first();
+        return chat?._id;
     },
 });
 
@@ -208,9 +310,8 @@ export const updateChatThreadId = mutation({
  * Saves the AI assistant's response to the messages table.
  * Called after the agent generates a response to store it
  * alongside user messages in the chat.
- * @deprecated No longer needed with streaming - messages are saved via deltas.
  */
-export const saveAgentResponse = mutation({
+export const saveAgentResponse = internalMutation({
     args: {
         chatId: v.id("chats"),
         text: v.string(),
