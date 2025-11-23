@@ -1,65 +1,128 @@
-import Image from "next/image";
+"use client";
+
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../convex/_generated/api";
+import { Id } from "../convex/_generated/dataModel";
 
 export default function Home() {
+  const [input, setInput] = useState("");
+  const [selectedChatId, setSelectedChatId] = useState<Id<"chats"> | null>(null);
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
+  
+  const chats = useQuery(api.chat.listChats) || [];
+  const messages = useQuery(
+    api.chat.getMessages,
+    selectedChatId ? { chatId: selectedChatId } : "skip"
+  ) || [];
+  
+  const sendMessage = useMutation(api.chat.sendMessage);
+  const createChat = useMutation(api.chat.createChat);
+
+  // Select the first chat by default when chats load
+  const firstChatId = chats.length > 0 ? chats[0]._id : null;
+  useEffect(() => {
+    if (firstChatId && !selectedChatId) {
+      setSelectedChatId(firstChatId);
+    }
+  }, [firstChatId, selectedChatId]);
+
+  const handleCreateChat = async () => {
+    setIsCreatingChat(true);
+    try {
+      const newChatId = await createChat();
+      setSelectedChatId(newChatId);
+    } finally {
+      setIsCreatingChat(false);
+    }
+  };
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || !selectedChatId) return;
+    const messageText = input;
+    setInput("");
+    await sendMessage({ chatId: selectedChatId, text: messageText });
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <main className="flex h-screen bg-gray-900 text-white">
+      <div className="w-full flex flex-col">
+        {/* Chat dropdown header */}
+        <div className="p-4 border-b border-gray-700 flex items-center gap-4">
+          <select
+            value={selectedChatId || ""}
+            onChange={(e) => setSelectedChatId(e.target.value as Id<"chats">)}
+            className="bg-gray-800 border border-gray-600 rounded px-4 py-2 focus:outline-none focus:border-blue-500 flex-1"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            {chats.map((chat) => (
+              <option key={chat._id} value={chat._id}>
+                {chat.name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={handleCreateChat}
+            disabled={isCreatingChat}
+            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed px-4 py-2 rounded font-bold whitespace-nowrap"
           >
-            Documentation
-          </a>
+            {isCreatingChat ? "Creating..." : "+ New Chat"}
+          </button>
         </div>
-      </main>
-    </div>
+
+        {/* Messages */}
+        <div className="flex-1 p-4 overflow-y-auto space-y-4">
+          {selectedChatId ? (
+            messages.length > 0 ? (
+              messages.map((msg) => (
+                <div 
+                  key={msg._id}
+                  className={`p-3 rounded-lg max-w-[80%] ${
+                    msg.sender === "user"
+                    ? "bg-blue-600 self-end ml-auto"
+                    : "bg-gray-700"
+                  }`}
+                >
+                  <div className="text-xs text-gray-300 mb-1 uppercase font-bold">
+                    {msg.sender}
+                  </div>
+                  {msg.text}
+                </div>
+              ))
+            ) : (
+              <div className="text-center text-gray-500 mt-8">
+                No messages yet. Start the conversation!
+              </div>
+            )
+          ) : (
+            <div className="text-center text-gray-500 mt-8">
+              {chats.length === 0 
+                ? "Create your first chat to get started!"
+                : "Select a chat to view messages"}
+            </div>
+          )}
+        </div>
+
+        {/* Input form */}
+        <form onSubmit={handleSend} className="p-4 border-t border-gray-700">
+          <div className="flex gap-2">
+            <input 
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type a message..."
+              disabled={!selectedChatId}
+              className="flex-1 bg-gray-800 border-gray-600 rounded p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+            <button
+              type="submit"
+              disabled={!selectedChatId}
+              className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-700 disabled:cursor-not-allowed px-4 py-2 rounded font-bold"
+            >
+              Send
+            </button>
+          </div>
+        </form>
+      </div>
+    </main>
   );
 }
