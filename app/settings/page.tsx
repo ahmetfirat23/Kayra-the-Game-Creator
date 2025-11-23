@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useRouter } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
@@ -13,7 +13,7 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
 
   const apiKeyStatus = useQuery(api.users.getApiKey);
-  const updateApiKey = useMutation(api.users.updateApiKey);
+  const updateApiKey = useAction(api.users.updateApiKey); // Action, not mutation
 
   const handleSave = async () => {
     if (!apiKey.trim()) return;
@@ -25,7 +25,18 @@ export default function Settings() {
       setTimeout(() => setSaved(false), 3000);
     } catch (error) {
       console.error("Failed to save API key:", error);
-      alert("Failed to save API key");
+      // Extract the actual error message from Convex error format
+      let errorMessage = "Failed to save API key";
+      if (error instanceof Error) {
+        const uncaughtMatch = error.message.match(/Uncaught Error: (.+?)(?:\n|$)/);
+        if (uncaughtMatch) {
+          errorMessage = uncaughtMatch[1];
+        } else {
+          const convexMatch = error.message.match(/\[CONVEX A\([^)]+\)\](?:\s*\[Request ID: [^\]]+\])?\s*(.+?)(?:\n|$)/);
+          errorMessage = convexMatch ? convexMatch[1] : error.message;
+        }
+      }
+      alert(`❌ ${errorMessage}`);
     }
   };
 
