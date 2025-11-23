@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"]});
 
 export const metadata: Metadata = {
   title: "Kayra - the Game Creator",
-  description: "Create interactive 3D mobile games with AI",
+  description: "Create 3D mobile games with AI",
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

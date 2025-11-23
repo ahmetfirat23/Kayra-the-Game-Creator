@@ -11,7 +11,7 @@ export default defineSchema({
     }).index("by_clerk_id", ["clerkId"]),
     
     chats: defineTable({
-        userId: v.optional(v.id("users")), // Link chat to user (optional for backward compatibility)
+        userId: v.id("users"), // Link chat to user
         name: v.string(),
         createdAt: v.number(),
         threadId: v.optional(v.string()),
@@ -22,6 +22,5 @@ export default defineSchema({
         chatId: v.id("chats"),
         text: v.string(),
         sender: v.union(v.literal("user"), v.literal("assistant")),
-        previewUrl: v.optional(v.string()),
     }).index("by_chat", ["chatId"]),
 });
