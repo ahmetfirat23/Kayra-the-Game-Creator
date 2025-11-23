@@ -61,6 +61,55 @@ export const createAndAttachRepo = internalAction({
             },
         });
         
+        console.log(`Created repo ${repoId}, installing React Three Fiber dependencies...`);
+
+        // Wait a moment for the repo to be ready
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        try {
+            // Request dev server to ensure it's running
+            const devServer = await freestyle.requestDevServer({ repoId });
+            
+            // Install React Three Fiber dependencies using MCP
+            const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
+            const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+            
+            const mcpClient = new Client(
+                { name: "setup", version: "1.0.0" },
+                { capabilities: {} }
+            );
+            
+            await mcpClient.connect(new StreamableHTTPClientTransport(new URL(devServer.mcpEphemeralUrl)));
+            
+            try {
+                // Install R3F and dependencies
+                console.log("Installing three, @react-three/fiber, and @react-three/drei...");
+                await mcpClient.callTool({
+                    name: "exec",
+                    arguments: { command: "npm install three @react-three/fiber @react-three/drei" },
+                });
+                
+                console.log("Installing expo-gl...");
+                await mcpClient.callTool({
+                    name: "exec",
+                    arguments: { command: "npx expo install expo-gl" },
+                });
+                
+                console.log("Committing dependency changes...");
+                await mcpClient.callTool({
+                    name: "git_commit_and_push",
+                    arguments: { message: "Initial setup: Installed React Three Fiber dependencies" },
+                });
+                
+                console.log("✅ React Three Fiber dependencies installed successfully!");
+            } finally {
+                await mcpClient.close();
+            }
+        } catch (error) {
+            console.error("Error installing dependencies:", error);
+            // Continue anyway - agent can install later if needed
+        }
+        
         // Update the chat with the repoId
         await ctx.runMutation(internal.chat.updateChatWithRepo, {
             chatId: args.chatId,
