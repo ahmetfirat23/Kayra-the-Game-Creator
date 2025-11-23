@@ -34,7 +34,7 @@ function MessageComponent({ message }: { message: UIMessage }) {
       }`}
     >
       <div className="text-xs text-gray-300 mb-1 uppercase font-bold flex items-center gap-2">
-        <span>{isUser ? "user" : "3d game builder"}</span>
+        <span>{isUser ? "You" : "Kayra"}</span>
         {isStreaming && (
           <span className="text-xs animate-pulse">●</span>
         )}
@@ -113,6 +113,20 @@ export default function Home() {
   // Extract messages from the paginated result
   const messages = messagesData?.page || [];
   
+  // Check if any message is currently streaming
+  const isStreaming = messages.some((msg) => msg.status === "streaming");
+  
+  // Check if any commit has been made - use the same check as we do for display
+  type MessagePart = { type?: string; [key: string]: unknown };
+  const hasCommitted = messages.some((msg) => 
+    (msg.parts as MessagePart[] | undefined)?.some((part) => {
+      if (!part.type?.startsWith('tool-')) return false;
+      // Get the tool name the same way we display it
+      const toolName = part.type.replace('tool-', '');
+      return toolName.includes('commitAndPush');
+    })
+  );
+  
   const sendMessage = useMutation(api.chat.sendMessage);
   const createChat = useMutation(api.chat.createChat);
 
@@ -144,7 +158,7 @@ export default function Home() {
    */
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !selectedChatId) return;
+    if (!input.trim() || !selectedChatId || isStreaming) return;
     
     // Check if repo is ready
     if (selectedChat?.repoId === "pending") {
@@ -164,33 +178,54 @@ export default function Home() {
   };
 
   return (
-    <main className="flex h-screen bg-gray-900 text-white">
-      {/* Chat Panel - 40% */}
-      <div className="w-2/5 flex flex-col border-r border-gray-700">
-        {/* Chat dropdown header */}
-        <div className="p-4 border-b border-gray-700 flex items-center gap-2">
-          <select
-            value={selectedChatId || ""}
-            onChange={(e) => setSelectedChatId(e.target.value as Id<"chats">)}
-            className="bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 flex-1"
-          >
-            {chats.map((chat) => (
-              <option key={chat._id} value={chat._id}>
-                {chat.name}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={handleCreateChat}
-            disabled={isCreatingChat}
-            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed px-3 py-2 rounded text-sm font-bold whitespace-nowrap"
-          >
-            {isCreatingChat ? "..." : "+ New"}
-          </button>
+    <main className="flex flex-col h-screen bg-gray-900 text-white">
+      {/* Top Bar with Brand, Chat Selector, and Preview Title */}
+      <div className="h-16 px-4 border-b border-gray-700 flex items-center justify-between gap-4">
+        {/* Left: Brand + Chat Controls */}
+        <div className="flex items-center gap-4 flex-1">
+          <div className="flex items-center gap-2 whitespace-nowrap">
+            <div className="text-2xl font-bold bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent">
+              Kayra
+            </div>
+            <div className="text-xs text-gray-500 mt-1">the Game Creator</div>
+          </div>
+          
+          <div className="flex items-center gap-2 flex-1 max-w-md">
+            <select
+              value={selectedChatId || ""}
+              onChange={(e) => setSelectedChatId(e.target.value as Id<"chats">)}
+              className="bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 flex-1"
+            >
+              {chats.map((chat) => (
+                <option key={chat._id} value={chat._id}>
+                  {chat.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleCreateChat}
+              disabled={isCreatingChat}
+              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed px-3 py-2 rounded text-sm font-bold whitespace-nowrap"
+            >
+              {isCreatingChat ? "..." : "+ New"}
+            </button>
+          </div>
         </div>
+        
+        {/* Right: Preview Title */}
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-bold">Live Preview</span>
+          <span className="text-xl">🎮</span>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Chat Panel - 50% */}
+        <div className="w-1/2 flex flex-col border-r border-gray-700 overflow-hidden">
 
         {/* Messages */}
-        <div className="flex-1 p-4 overflow-y-auto space-y-3">
+        <div className="flex-1 p-6 overflow-y-auto space-y-4 min-h-0">
           {selectedChat?.repoId === "pending" ? (
             <div className="text-center text-blue-500 mt-8 text-sm animate-pulse">
               <div className="text-2xl mb-2">⚙️</div>
@@ -206,9 +241,11 @@ export default function Home() {
               ))
             ) : (
               <div className="text-center text-gray-500 mt-8 text-sm">
-                Ask me to build a 3D game! 🎮
-                <div className="mt-2 text-xs">
-                  Try: &quot;Create a spinning cube game&quot;
+                <div className="text-3xl mb-3">👋</div>
+                <div className="text-lg font-bold text-white mb-2">Hi! I&apos;m Kayra</div>
+                <div className="mb-4">Tell me what kind of 3D game you want to create!</div>
+                <div className="mt-4 text-xs text-gray-600">
+                  Try: &quot;Make a flappy bird game&quot; or &quot;Create a racing game&quot;
                 </div>
               </div>
             )
@@ -222,18 +259,24 @@ export default function Home() {
         </div>
 
         {/* Input form */}
-        <form onSubmit={handleSend} className="p-4 border-t border-gray-700">
+        <form onSubmit={handleSend} className="p-6 border-t border-gray-700">
           <div className="flex gap-2">
             <input 
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={selectedChat?.repoId === "pending" ? "Setting up project..." : "Describe your 3D game..."}
-              disabled={!selectedChatId || selectedChat?.repoId === "pending"}
+              placeholder={
+                selectedChat?.repoId === "pending" 
+                  ? "Setting up project..." 
+                  : isStreaming 
+                  ? "Kayra is working..." 
+                  : "Tell Kayra what game you want to create..."
+              }
+              disabled={!selectedChatId || selectedChat?.repoId === "pending" || isStreaming}
               className="flex-1 bg-gray-800 border-gray-600 rounded p-2 text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
               type="submit"
-              disabled={!selectedChatId || selectedChat?.repoId === "pending"}
+              disabled={!selectedChatId || selectedChat?.repoId === "pending" || isStreaming}
               className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-700 disabled:cursor-not-allowed px-4 py-2 rounded font-bold text-sm"
             >
               Send
@@ -242,33 +285,36 @@ export default function Home() {
         </form>
       </div>
 
-      {/* Preview Panel - 60% */}
-      <div className="w-3/5 flex flex-col">
-        <div className="p-4 border-b border-gray-700">
-          <h2 className="text-lg font-bold">Live Preview 🎮</h2>
-          <p className="text-xs text-gray-400 mt-1">
-            Your 3D game will appear here once the AI starts building
-          </p>
-        </div>
-        <div className="flex-1 bg-gray-950 flex items-center justify-center">
+      {/* Preview Panel - 50% */}
+      <div className="w-1/2 flex flex-col overflow-hidden">
+        <div className="flex-1 bg-gray-950 p-6 flex items-center justify-center">
           {selectedChat?.repoId === "pending" ? (
             <div className="text-blue-500 text-center animate-pulse">
               <div className="text-4xl mb-4">⚙️</div>
               <div className="text-sm">Setting up dev environment...</div>
               <div className="text-xs text-gray-500 mt-2">This may take 30-60 seconds</div>
             </div>
-          ) : selectedChat?.repoId ? (
-            <FreestyleDevServer 
-              actions={{ requestDevServer }} 
-              repoId={selectedChat.repoId} 
-            />
+          ) : selectedChat?.repoId && hasCommitted ? (
+            <div className="w-full h-full rounded-lg overflow-hidden border border-gray-700 shadow-2xl">
+              <FreestyleDevServer 
+                actions={{ requestDevServer }} 
+                repoId={selectedChat.repoId} 
+              />
+            </div>
           ) : (
             <div className="text-gray-600 text-center">
               <div className="text-4xl mb-4">🎮</div>
-              <div className="text-sm">Create a chat to start building games</div>
+              <div className="text-sm">
+                {selectedChat?.repoId && messages.length > 0
+                  ? "Kayra is designing your game..."
+                  : selectedChat?.repoId 
+                  ? "Describe your game idea to get started"
+                  : "Create a chat to start building games"}
+              </div>
             </div>
           )}
         </div>
+      </div>
       </div>
     </main>
   );

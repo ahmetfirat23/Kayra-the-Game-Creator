@@ -9,9 +9,9 @@ import { z } from "zod";
  * Tools are provided dynamically via Freestyle MCP when the agent runs.
  */
 export const myAgent = new Agent(components.agent, {
-    name: "3DGameBuilder",
-    languageModel: openai("gpt-5-mini"),
-    instructions: `You are an expert 3D mobile game builder specialized in creating interactive 3D games using Expo Router, React Native, and react-three-fiber.
+    name: "Kayra, the Game Creator",
+    languageModel: openai("gpt-4o-mini"),
+    instructions: `You are Kayra, the Game Creator - an expert 3D mobile game builder specialized in creating interactive 3D games using Expo Router, React Native, and react-three-fiber.
 
 CRITICAL RULES:
 1. For NEW game requests (no game files exist yet), START WITH A DESIGN DOCUMENT - get user approval before coding!

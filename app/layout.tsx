@@ -6,18 +6,18 @@ import ConvexClientProvider from "./ConvexClientProvider";
 const inter = Inter({ subsets: ["latin"]});
 
 export const metadata: Metadata = {
-  title: "Game Builder",
-  description: "Build your own 3D games with ease",
+  title: "Kayra - the Game Creator",
+  description: "Create interactive 3D mobile games with AI",
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
+    <html lang="en" suppressHydrationWarning>
+      <body className={inter.className} suppressHydrationWarning>
         <ConvexClientProvider>
           {children}
         </ConvexClientProvider>
-        </body>
+      </body>
     </html>
   );
 }
