@@ -275,11 +275,14 @@ export default function Home() {
       <div className="h-16 px-4 border-b border-[#B5A58D] dark:border-gray-700 flex items-center justify-between gap-4">
         {/* Left: Brand + Chat Controls */}
         <div className="flex items-center gap-4 flex-1 min-w-0">
-          <div className="flex items-center gap-2 whitespace-nowrap">
-            <div className="text-2xl font-bold bg-gradient-to-r from-[#2D1B00] via-[#5B4332] to-[#5A8A5E] dark:from-blue-500 dark:via-blue-500 dark:to-purple-600 bg-clip-text text-transparent">
-              Kayra
+          <div className="flex flex-col leading-tight">
+            <div className="flex items-center gap-2">
+              <div className="text-2xl font-bold bg-gradient-to-r from-[#2D1B00] via-[#5B4332] to-[#5A8A5E] dark:from-blue-400 dark:via-purple-400 dark:to-purple-500 bg-clip-text text-transparent">
+                Kayra
+              </div>
+              <div className="text-2xl opacity-90 dark:opacity-70">🌳</div>
             </div>
-            <div className="text-xs text-[#5B4332] dark:text-gray-500 mt-1 font-medium">the Game Creator</div>
+            <div className="text-xs text-[#5B4332] dark:text-gray-400 font-medium">the Game Creator</div>
           </div>
           
           <div className="flex items-center gap-2 flex-1 max-w-md">
