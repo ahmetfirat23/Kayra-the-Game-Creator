@@ -309,7 +309,16 @@ export const processMessage = internalAction({
         }
 
         // Use user's API key if they have one, otherwise use system key (for admin)
-        const apiKey = user.isAdmin ? process.env.OPENAI_API_KEY : user.openaiApiKey;
+        let apiKey: string | undefined;
+        if (user.isAdmin) {
+            apiKey = process.env.OPENAI_API_KEY;
+        } else if (user.openaiApiKey) {
+            // Decrypt the user's API key
+            apiKey = await ctx.runAction(internal.crypto.decryptApiKey, {
+                encryptedData: user.openaiApiKey,
+            });
+        }
+        
         if (!apiKey) {
             throw new Error("No API key configured. Please add your OpenAI API key in Settings.");
         }

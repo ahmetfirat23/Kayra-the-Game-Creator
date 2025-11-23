@@ -355,6 +355,12 @@ export default function Home() {
                 openai.com
               </a>
             </p>
+            
+            <div className="bg-blue-900/20 border border-blue-700 rounded p-3 mb-4">
+              <p className="text-xs text-blue-300">
+                🔐 Your API key is encrypted and stored securely. We only decrypt it when making AI requests on your behalf. Like all BYOK services, we technically have access to your key—only use services you trust.
+              </p>
+            </div>
 
             <div className="space-y-4">
               <div className="flex gap-2">

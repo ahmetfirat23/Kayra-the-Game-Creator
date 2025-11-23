@@ -60,11 +60,20 @@ export default function Settings() {
       <div className="max-w-2xl mx-auto p-8">
         <div className="bg-gray-800 rounded-lg p-6">
           <h2 className="text-2xl font-bold mb-2">OpenAI API Key</h2>
-          <p className="text-gray-400 text-sm mb-6">
+          <p className="text-gray-400 text-sm mb-4">
             {apiKeyStatus?.isAdmin 
               ? "You're an admin - using system API key" 
               : "Your API key is used to power Kayra's AI. Get one at openai.com"}
           </p>
+          
+          {!apiKeyStatus?.isAdmin && (
+            <div className="bg-blue-900/20 border border-blue-700 rounded p-4 mb-6">
+              <h3 className="text-sm font-bold text-blue-300 mb-2">🔐 Security Notice</h3>
+              <p className="text-xs text-blue-300">
+                Your API key is encrypted and stored securely. We only decrypt it when making AI requests on your behalf. Like all BYOK (Bring Your Own Key) services, we technically have access to your key to make API calls. Only use services you trust with your API keys.
+              </p>
+            </div>
+          )}
 
           {apiKeyStatus?.isAdmin ? (
             <div className="bg-green-900/20 border border-green-700 rounded p-4 text-green-400">

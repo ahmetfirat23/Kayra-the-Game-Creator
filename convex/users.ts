@@ -65,7 +65,7 @@ export const syncUser = mutation({
 
 /**
  * Validate and update user's OpenAI API key
- * This is an action because it needs to make an HTTP request to OpenAI
+ * This is an action because it needs to make an HTTP request to OpenAI and use Node.js crypto
  */
 export const updateApiKey = action({
     args: {
@@ -106,10 +106,15 @@ export const updateApiKey = action({
                 throw new Error(errorMessage);
             }
 
-            // Key is valid, save it via internal mutation
+            // Encrypt the API key before saving
+            const encryptedKey = await ctx.runAction(internal.crypto.encryptApiKey, {
+                apiKey: args.apiKey,
+            });
+
+            // Key is valid and encrypted, save it via internal mutation
             await ctx.runMutation(internal.users.saveApiKey, {
                 clerkId: identity.subject,
-                apiKey: args.apiKey,
+                apiKey: encryptedKey, // Save encrypted version
             });
         } catch (error) {
             if (error instanceof Error) {
@@ -124,12 +129,12 @@ export const updateApiKey = action({
 });
 
 /**
- * Internal mutation to save API key (called after validation)
+ * Internal mutation to save API key (called after validation and encryption)
  */
 export const saveApiKey = internalMutation({
     args: {
         clerkId: v.string(),
-        apiKey: v.string(),
+        apiKey: v.string(), // This is already encrypted by the action
     },
     handler: async (ctx, args) => {
         const user = await ctx.db
@@ -141,6 +146,7 @@ export const saveApiKey = internalMutation({
             throw new Error("User not found");
         }
 
+        // Save the encrypted key directly (already encrypted by action)
         await ctx.db.patch(user._id, {
             openaiApiKey: args.apiKey,
         });
