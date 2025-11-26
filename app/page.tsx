@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { useSmoothText, type UIMessage } from "@convex-dev/agent/react";
 import { api } from "../convex/_generated/api";
@@ -198,6 +198,19 @@ function MessageComponent({ message }: { message: UIMessage }) {
             const toolName = tool.type ? tool.type.replace('tool-', '') : 'tool';
             const isFileOperation = toolName.toLowerCase().includes('write') || toolName.toLowerCase().includes('file');
             const isExpanded = expandedTools.has(idx);
+            const toolWithArgs = tool as { args?: unknown; output?: unknown };
+            
+            // Format tool arguments for display
+            const formatArgs = (args: unknown): string => {
+              if (typeof args === 'string') {
+                return args;
+              }
+              try {
+                return JSON.stringify(args, null, 2);
+              } catch {
+                return String(args);
+              }
+            };
             
             return (
               <div key={idx} className="bg-[#B5A58D] dark:bg-gray-800 rounded text-xs border border-[#9A8A70] dark:border-gray-700 overflow-hidden">
@@ -212,11 +225,28 @@ function MessageComponent({ message }: { message: UIMessage }) {
                     ▶
                   </div>
                 </button>
-                {isExpanded && tool.output && (
-                  <div className="border-t border-[#9A8A70] dark:border-gray-700 bg-[#2D1B00]/5 dark:bg-black/30 p-3">
-                    <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed">
-                      {typeof tool.output === 'string' ? tool.output : JSON.stringify(tool.output, null, 2)}
-                    </pre>
+                {isExpanded && (
+                  <div className="border-t border-[#9A8A70] dark:border-gray-700 bg-[#2D1B00]/5 dark:bg-black/30 p-3 space-y-3">
+                    {/* Show tool arguments if available (e.g., full file content for writeFile) */}
+                    {toolWithArgs.args !== undefined && toolWithArgs.args !== null && (
+                      <div>
+                        <div className="text-xs font-bold text-[#5A8A5E] dark:text-blue-300 mb-1">Arguments:</div>
+                        <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed">
+                          {formatArgs(toolWithArgs.args)}
+                        </pre>
+                      </div>
+                    )}
+                    {/* Show tool output */}
+                    {tool.output && (
+                      <div>
+                        {toolWithArgs.args !== undefined && toolWithArgs.args !== null && (
+                          <div className="text-xs font-bold text-[#5A8A5E] dark:text-blue-300 mb-1 mt-3">Output:</div>
+                        )}
+                        <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed">
+                          {typeof tool.output === 'string' ? tool.output : JSON.stringify(tool.output, null, 2)}
+                        </pre>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -301,6 +331,7 @@ export default function Home() {
 
   // Auto-select the first chat when chats are loaded and none is selected
   const firstChatId = chats.length > 0 ? chats[0]._id : null;
+  const hasRestoredChat = useRef(false);
   
   // Show toast notification
   const showToast = (message: string, type: "error" | "success" | "info" = "info") => {
@@ -318,11 +349,42 @@ export default function Home() {
     }
   }, [syncUser, isSignedIn]);
 
+  // Restore selected chat from localStorage on mount
   useEffect(() => {
-    if (firstChatId && !selectedChatId) {
-      setSelectedChatId(firstChatId);
+    if (chats.length > 0 && !selectedChatId && !hasRestoredChat.current) {
+      hasRestoredChat.current = true;
+      const savedChatId = localStorage.getItem("selectedChatId");
+      if (savedChatId) {
+        // Check if the saved chat still exists
+        const chatExists = chats.some(chat => chat._id === savedChatId);
+        if (chatExists) {
+          setSelectedChatId(savedChatId as Id<"chats">);
+          return;
+        }
+      }
+      // Fall back to first chat if no saved selection or saved chat doesn't exist
+      if (firstChatId) {
+        setSelectedChatId(firstChatId);
+      }
     }
-  }, [firstChatId, selectedChatId]);
+  }, [chats, firstChatId, selectedChatId]);
+
+  // If selected chat is deleted, fall back to first available chat
+  useEffect(() => {
+    if (selectedChatId && chats.length > 0) {
+      const chatExists = chats.some(chat => chat._id === selectedChatId);
+      if (!chatExists && firstChatId) {
+        setSelectedChatId(firstChatId);
+      }
+    }
+  }, [selectedChatId, chats, firstChatId]);
+
+  // Save selected chat to localStorage whenever it changes
+  useEffect(() => {
+    if (selectedChatId) {
+      localStorage.setItem("selectedChatId", selectedChatId);
+    }
+  }, [selectedChatId]);
 
   // When switching chats, reset isSending (unless still streaming on current chat)
   useEffect(() => {

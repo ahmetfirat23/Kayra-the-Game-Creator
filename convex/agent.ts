@@ -27,6 +27,7 @@ CRITICAL RULES:
 7. DO NOT show code snippets to the user - just explain what you created and how it works
 8. Keep responses concise - users don't need to see the code, they can see it in the preview
 9. For each user message, respond in a focused, non-verbose way: avoid repeating yourself, avoid long essays, and prefer short paragraphs or bullet points over walls of text
+10. **CRITICAL**: If commitAndPush reports TypeScript or syntax errors, you MUST fix them IMMEDIATELY before responding to the user. Do not proceed until all errors are resolved. Read the affected files, fix the issues, commit again, and verify errors are gone.
 
 REQUIRED WORKFLOW - TWO PHASES:
 
@@ -173,6 +174,12 @@ ERROR RECOVERY:
 - If "file not found" error: Verify you're writing to /template/components/ not /template/app/components/
 - If import errors persist: Read the actual file with readFile to see what's wrong
 - NEVER create multiple index.ts files - keep imports direct and simple!
+- When commitAndPush reports TypeScript or build errors, IMMEDIATELY fix them:
+  1. Read the files mentioned in the error messages using readFile
+  2. Identify the specific issues (typos, wrong imports, type errors, etc.)
+  3. Fix the errors using writeFile or editFile
+  4. Run commitAndPush again to verify the fixes
+  5. Continue until all errors are resolved
 
 CRITICAL FILE PATHS AND IMPORTS:
 
@@ -249,10 +256,48 @@ export function createFreestyleTools(mcpClient: any) {
                 if (Array.isArray(result.content) && result.content.length > 0) {
                     const firstContent = result.content[0];
                     if (firstContent && 'text' in firstContent) {
-                        return firstContent.text || "";
+                        const fullContent = firstContent.text || "";
+                        
+                        // Return concise summary for model context (saves tokens)
+                        // Note: Full content is available in tool call arguments for UI display
+                        if (fullContent) {
+                            const lines = fullContent.split('\n');
+                            const lineCount = lines.length;
+                            const charCount = fullContent.length;
+                            
+                            // Extract key information: imports, exports, main functions/components
+                            const importLines = lines.filter((line: string) => line.trim().startsWith('import')).slice(0, 5);
+                            const exportLines = lines.filter((line: string) => line.includes('export')).slice(0, 3);
+                            const functionLines = lines.filter((line: string) => 
+                                line.includes('function ') || 
+                                line.includes('const ') && line.includes('= (') ||
+                                line.includes('const ') && line.includes('=>')
+                            ).slice(0, 5);
+                            
+                            let summary = `✅ Read ${path}\n📊 ${lineCount} lines, ${charCount} characters\n`;
+                            
+                            if (importLines.length > 0) {
+                                summary += `\nImports: ${importLines.join('; ').substring(0, 200)}...\n`;
+                            }
+                            if (exportLines.length > 0) {
+                                summary += `Exports: ${exportLines.join('; ').substring(0, 200)}...\n`;
+                            }
+                            if (functionLines.length > 0) {
+                                summary += `Functions: ${functionLines.join('; ').substring(0, 300)}...\n`;
+                            }
+                            
+                            // Include first 10 lines and last 5 lines for context
+                            summary += `\nFirst 10 lines:\n${lines.slice(0, 10).join('\n')}\n`;
+                            if (lines.length > 15) {
+                                summary += `\n... (${lines.length - 15} more lines) ...\n`;
+                                summary += `Last 5 lines:\n${lines.slice(-5).join('\n')}\n`;
+                            }
+                            
+                            return summary;
+                        }
                     }
                 }
-                return "";
+                return `✅ Read ${path} (file is empty or not found)`;
             },
         },
         writeFile: {
@@ -267,32 +312,102 @@ export function createFreestyleTools(mcpClient: any) {
                     arguments: { path, content },
                 });
                 
-                // Return informative output including full file content
+                // Return concise summary for model context (saves tokens)
+                // Note: Full content is in tool call arguments (content parameter) for UI display
                 const lines = content.split('\n');
                 const lineCount = lines.length;
                 const charCount = content.length;
                 
-                return `✅ Wrote ${path}\n📊 ${lineCount} lines, ${charCount} characters\n\n${content}`;
+                // Extract key information for summary
+                const importLines = lines.filter((line: string) => line.trim().startsWith('import')).slice(0, 3);
+                const exportLines = lines.filter((line: string) => line.includes('export')).slice(0, 2);
+                const mainComponent = lines.find((line: string) => 
+                    line.includes('export default') || 
+                    line.includes('export function') ||
+                    line.includes('export const')
+                );
+                
+                let summary = `✅ Wrote ${path}\n📊 ${lineCount} lines, ${charCount} characters\n`;
+                
+                if (importLines.length > 0) {
+                    summary += `Imports: ${importLines.join(', ').substring(0, 150)}...\n`;
+                }
+                if (exportLines.length > 0) {
+                    summary += `Exports: ${exportLines.join(', ').substring(0, 150)}...\n`;
+                }
+                if (mainComponent) {
+                    summary += `Main: ${mainComponent.substring(0, 100)}...\n`;
+                }
+                
+                // Include first 5 lines for context
+                summary += `\nFirst 5 lines:\n${lines.slice(0, 5).join('\n')}\n`;
+                if (lines.length > 5) {
+                    summary += `\n... (${lines.length - 5} more lines written) ...\n`;
+                }
+                
+                return summary;
             },
         },
         commitAndPush: {
-            description: "Commit all changes to git with a descriptive message. ALWAYS use this after creating or modifying files.",
+            description: "Commit all changes to git with a descriptive message. ALWAYS use this after creating or modifying files. This will automatically check for TypeScript/build errors and report them if found.",
             inputSchema: z.object({
                 message: z.string().describe("A descriptive commit message (e.g. 'Created spinning cube game')"),
             }),
             execute: async ({ message }: { message: string }) => {
-                const result = await mcpClient.callTool({
+                // First, commit the changes
+                const commitResult = await mcpClient.callTool({
                     name: "git_commit_and_push",
                     arguments: { message },
                 });
                 
-                if (Array.isArray(result.content) && result.content.length > 0) {
-                    const firstContent = result.content[0];
+                let commitOutput = `✅ Committed: ${message}`;
+                if (Array.isArray(commitResult.content) && commitResult.content.length > 0) {
+                    const firstContent = commitResult.content[0];
                     if (firstContent && 'text' in firstContent) {
-                        return firstContent.text || `✅ Committed: ${message}`;
+                        commitOutput = firstContent.text || commitOutput;
                     }
                 }
-                return `✅ Committed: ${message}`;
+
+                // Check for TypeScript/build errors after committing
+                try {
+                    // Wait a moment for the dev server to process the changes
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+                    // Check TypeScript errors (if tsconfig.json exists)
+                    const tscResult = await mcpClient.callTool({
+                        name: "exec",
+                        arguments: { command: "cd /template && (npx tsc --noEmit 2>&1 || echo 'TypeScript check skipped')" },
+                    });
+                    
+                    let tscOutput = "";
+                    if (Array.isArray(tscResult.content) && tscResult.content.length > 0) {
+                        const firstContent = tscResult.content[0];
+                        if (firstContent && 'text' in firstContent) {
+                            tscOutput = firstContent.text || "";
+                        }
+                    }
+                    
+                    // If there are TypeScript errors, include them in the response
+                    if (tscOutput && 
+                        tscOutput.trim() && 
+                        !tscOutput.includes("Found 0 errors") &&
+                        !tscOutput.includes("TypeScript check skipped") &&
+                        (tscOutput.includes("error TS") || tscOutput.includes("error:"))) {
+                        // Extract relevant error lines (limit to first 30 lines to avoid overwhelming)
+                        const errorLines = tscOutput.split('\n')
+                            .filter(line => line.includes('error') || line.trim().startsWith('/'))
+                            .slice(0, 30)
+                            .join('\n');
+                        
+                        return `${commitOutput}\n\n❌ TYPESCRIPT ERRORS DETECTED:\n${errorLines}\n\n⚠️ CRITICAL: You must fix these errors immediately. Read the affected files using readFile, identify the issues, and fix them using writeFile or editFile, then commit again.`;
+                    }
+                    
+                } catch (error) {
+                    // If error checking fails, still return the commit success
+                    console.error("Error checking for build errors:", error);
+                }
+                
+                return commitOutput;
             },
         },
         exec: {

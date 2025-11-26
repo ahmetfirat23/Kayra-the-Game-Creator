@@ -370,7 +370,7 @@ export const processMessage = internalAction({
             if (user.isAdmin) {
                 apiKey = process.env.OPENAI_API_KEY;
             } else if (inProPeriod) {
-                const monthlyLimit = user.proMonthlyTokenLimit ?? 25_000_000;
+                const monthlyLimit = user.proMonthlyTokenLimit ?? 7_000_000;
                 const used = user.proTokensUsedThisPeriod || 0;
 
                 if (proKey && used < monthlyLimit) {

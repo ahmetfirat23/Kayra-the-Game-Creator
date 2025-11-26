@@ -538,7 +538,7 @@ export const handleSubscriptionPeriodEnd = internalMutation({
                 proSubscriptionStatus: "active",
                 proCurrentPeriodEnd: nextEnd,
                 proTokensUsedThisPeriod: 0,
-                proMonthlyTokenLimit: user.proMonthlyTokenLimit ?? 25_000_000,
+                proMonthlyTokenLimit: user.proMonthlyTokenLimit ?? 7_000_000,
                 proByokFallbackNotifiedThisPeriod: false,
             });
 
@@ -620,7 +620,7 @@ export const addTokenUsage = internalMutation({
             typeof user.proCurrentPeriodEnd === "number" &&
             now <= user.proCurrentPeriodEnd;
 
-        const monthlyLimit = user.proMonthlyTokenLimit ?? 25_000_000;
+        const monthlyLimit = user.proMonthlyTokenLimit ?? 7_000_000;
 
         if (inProPeriod) {
             const tokensUsed = (user.proTokensUsedThisPeriod || 0) + args.totalTokens;
@@ -693,7 +693,7 @@ export const startProSubscription = mutation({
         }
 
         const now = Date.now();
-        const monthlyLimit = user.proMonthlyTokenLimit ?? 25_000_000;
+        const monthlyLimit = user.proMonthlyTokenLimit ?? 7_000_000;
 
         const inExistingCanceledPeriod =
             user.proSubscriptionStatus === "canceled" &&
@@ -814,7 +814,7 @@ export const getBillingStatus = query({
                 ? "byok"
                 : "free";
 
-        const monthlyLimit = user.proMonthlyTokenLimit ?? 25_000_000;
+        const monthlyLimit = user.proMonthlyTokenLimit ?? 7_000_000;
         const used = user.proTokensUsedThisPeriod || 0;
 
         return {
