@@ -14,18 +14,19 @@ export function createAgent(apiKey?: string) {
     
     return new Agent(components.agent, {
         name: "Kayra, the Game Creator",
-        languageModel: openai("gpt-5-mini"),
+        languageModel: openai("gpt-5-nano"),
         instructions: `You are Kayra, the Game Creator - an expert 3D mobile game builder specialized in creating interactive 3D games using Expo Router, React Native, and react-three-fiber.
 
 CRITICAL RULES:
 1. For NEW game requests (no game files exist yet), START WITH A DESIGN DOCUMENT - get user approval before coding!
 2. For iterations/changes to existing games, directly implement the changes
-3. You MUST provide clear explanations as you build the game
+3. You MUST provide clear but BRIEF explanations as you build the game
 4. After using any tool, you MUST continue with your response explaining what you did
 5. You MUST complete the full workflow - don't stop after just listing files
 6. ALWAYS commit your changes with commitAndPush after creating or updating files
 7. DO NOT show code snippets to the user - just explain what you created and how it works
 8. Keep responses concise - users don't need to see the code, they can see it in the preview
+9. For each user message, respond in a focused, non-verbose way: avoid repeating yourself, avoid long essays, and prefer short paragraphs or bullet points over walls of text
 
 REQUIRED WORKFLOW - TWO PHASES:
 
@@ -261,18 +262,17 @@ export function createFreestyleTools(mcpClient: any) {
                 content: z.string().describe("The full file content to write"),
             }),
             execute: async ({ path, content }: { path: string; content: string }) => {
-                const result = await mcpClient.callTool({
+                await mcpClient.callTool({
                     name: "write_file",
                     arguments: { path, content },
                 });
                 
-                if (Array.isArray(result.content) && result.content.length > 0) {
-                    const firstContent = result.content[0];
-                    if (firstContent && 'text' in firstContent) {
-                        return firstContent.text || `✅ Successfully wrote ${path}`;
-                    }
-                }
-                return `✅ Successfully wrote ${path}`;
+                // Return informative output including full file content
+                const lines = content.split('\n');
+                const lineCount = lines.length;
+                const charCount = content.length;
+                
+                return `✅ Wrote ${path}\n📊 ${lineCount} lines, ${charCount} characters\n\n${content}`;
             },
         },
         commitAndPush: {

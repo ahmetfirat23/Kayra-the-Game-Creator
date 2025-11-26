@@ -2,7 +2,7 @@ import { query, mutation, internalAction, internalQuery, internalMutation } from
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { components } from "./_generated/api";
-import { saveMessage, listUIMessages, syncStreams, vStreamArgs } from "@convex-dev/agent";
+import { saveMessage, listMessages, syncStreams, toUIMessages, vStreamArgs } from "@convex-dev/agent";
 import { paginationOptsValidator } from "convex/server";
 
 /**
@@ -208,11 +208,28 @@ export const listThreadMessages = query({
         streamArgs: vStreamArgs,
     },
     handler: async (ctx, args) => {
-        // Fetch regular non-streaming messages
-        const paginated = await listUIMessages(ctx, components.agent, {
+        // Fetch underlying MessageDocs so we can access usage/metadata
+        const paginatedDocs = await listMessages(ctx, components.agent, {
             threadId: args.threadId,
             paginationOpts: args.paginationOpts,
         });
+
+        // Attach usage to metadata so it survives conversion to UIMessage
+        const docsWithMetadata = paginatedDocs.page.map((doc) => {
+            const existingMetadata = (doc as { metadata?: unknown }).metadata;
+            return {
+                ...doc,
+                metadata: {
+                    ...(typeof existingMetadata === "object" && existingMetadata !== null
+                        ? existingMetadata
+                        : {}),
+                    usage: doc.usage,
+                },
+            };
+        });
+
+        // Convert to UIMessage objects for the React client
+        const page = toUIMessages(docsWithMetadata);
 
         // Fetch streaming deltas
         const streams = await syncStreams(ctx, components.agent, {
@@ -220,7 +237,7 @@ export const listThreadMessages = query({
             streamArgs: args.streamArgs,
         });
 
-        return { ...paginated, streams };
+        return { ...paginatedDocs, page, streams };
     },
 });
 
@@ -236,18 +253,40 @@ export const sendMessage = mutation({
         text: v.string(),
     },
     handler: async(ctx, args) => {
+        // Get the chat and user
+        const chat = await ctx.db.get(args.chatId);
+        if (!chat) {
+            throw new Error("Chat not found");
+        }
+
+        const user = await ctx.db.get(chat.userId);
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const now = Date.now();
+        const inProPeriod =
+            (user.proSubscriptionStatus === "active" ||
+                user.proSubscriptionStatus === "canceled") &&
+            typeof user.proCurrentPeriodEnd === "number" &&
+            now <= user.proCurrentPeriodEnd;
+
+        // Check if user is free user (no API key, not admin, no active Pro period)
+        const isFreeUser = !user.isAdmin && !user.openaiApiKey && !inProPeriod;
+        
+        // For free users, check and increment message count
+        if (isFreeUser) {
+            await ctx.runMutation(internal.users.incrementMessageCount, {
+                userId: user._id,
+            });
+        }
+
         // Save user message to our database
         await ctx.db.insert("messages", {
             chatId: args.chatId,
             text: args.text,
             sender: "user",
         });
-
-        // Get or create thread for this chat
-        const chat = await ctx.db.get(args.chatId);
-        if (!chat) {
-            throw new Error("Chat not found");
-        }
 
         if (!chat.repoId || chat.repoId === "pending") {
             throw new Error("Repository is still being created. Please wait a moment and try again.");
@@ -269,6 +308,9 @@ export const sendMessage = mutation({
             threadId,
             prompt: args.text,
         });
+
+        // Mark chat as AI's turn (prevents user from sending more messages)
+        await ctx.db.patch(args.chatId, { isAiTurn: true });
 
         // Schedule action to generate AI response with Freestyle repo access
         await ctx.scheduler.runAfter(0, internal.chat.processMessage, {
@@ -302,79 +344,156 @@ export const processMessage = internalAction({
         userId: v.id("users"),
     },
     handler: async (ctx, args) => {
-        // Get user's API key
-        const user = await ctx.runQuery(internal.chat.getUser, { userId: args.userId });
-        if (!user) {
-            throw new Error("User not found");
-        }
-
-        // Use user's API key if they have one, otherwise use system key (for admin)
-        let apiKey: string | undefined;
-        if (user.isAdmin) {
-            apiKey = process.env.OPENAI_API_KEY;
-        } else if (user.openaiApiKey) {
-            // Decrypt the user's API key
-            apiKey = await ctx.runAction(internal.crypto.decryptApiKey, {
-                encryptedData: user.openaiApiKey,
-            });
-        }
-        
-        if (!apiKey) {
-            throw new Error("No API key configured. Please add your OpenAI API key in Settings.");
-        }
-
-        // Import dependencies
-        const { createAgent, createFreestyleTools } = await import("./agent");
-        const { stepCountIs } = await import("@convex-dev/agent");
-        const { freestyle } = await import("../lib/freestyle");
-        const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
-        const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
-
-        // Connect to MCP server once
-        const devServer = await freestyle.requestDevServer({ repoId: args.repoId });
-        const mcpClient = new Client(
-            { name: "game-builder", version: "1.0.0" },
-            { capabilities: {} }
-        );
-        await mcpClient.connect(new StreamableHTTPClientTransport(new URL(devServer.mcpEphemeralUrl)));
-
-        // Create Freestyle tools that use the MCP client
-        const freestyleTools = createFreestyleTools(mcpClient);
-        
-        console.log(`✅ Created ${Object.keys(freestyleTools).length} Freestyle tools`);
-
-        // Create agent with user's API key
-        const agent = createAgent(apiKey);
-
-        // Use the agent's streamText WITH our custom Freestyle tools
-        const result = await agent.streamText(
-            ctx,
-            { threadId: args.threadId },
-            {
-                promptMessageId: args.promptMessageId,
-                tools: freestyleTools,
-                stopWhen: stepCountIs(15),
-            },
-            {
-                saveStreamDeltas: {
-                    chunking: "word",
-                    throttleMs: 100,
-                },
+        try {
+            // Get user's API key
+            const user = await ctx.runQuery(internal.chat.getUser, { userId: args.userId });
+            if (!user) {
+                throw new Error("User not found");
             }
-        );
 
-        // Get the final text
-        const finalText = await result.text;
+            // Determine which API key to use:
+            // Priority:
+            // 1. Admin users: use system key
+            // 2. Active Pro period: use Pro key while under cap; if cap exhausted and BYOK exists, use BYOK
+            // 3. Users with their own key (BYOK): use their key
+            // 4. Free users (no key, not admin): use system key with daily limit
+            let apiKey: string | undefined;
+            let useByok = false;
+            const now = Date.now();
+            const inProPeriod =
+                (user.proSubscriptionStatus === "active" ||
+                    user.proSubscriptionStatus === "canceled") &&
+                typeof user.proCurrentPeriodEnd === "number" &&
+                now <= user.proCurrentPeriodEnd;
+            const proKey = process.env.PRO_OPENAI_API_KEY;
 
-        // Close MCP connection
-        await mcpClient.close();
+            if (user.isAdmin) {
+                apiKey = process.env.OPENAI_API_KEY;
+            } else if (inProPeriod) {
+                const monthlyLimit = user.proMonthlyTokenLimit ?? 25_000_000;
+                const used = user.proTokensUsedThisPeriod || 0;
 
-        // Save the final response text to the messages table
-        if (finalText) {
-            await ctx.runMutation(internal.chat.saveAgentResponse, {
+                if (proKey && used < monthlyLimit) {
+                    // Normal Pro usage under cap → use Pro key
+                    apiKey = proKey;
+                } else if (used >= monthlyLimit && user.openaiApiKey) {
+                    // Pro cap exhausted, but user has BYOK → allow BYOK instead of system key
+                    useByok = true;
+                    // Mark that we fell back to BYOK this period (for user notification).
+                    await ctx.runMutation(internal.users.markProByokFallbackNotified, {
+                        userId: args.userId,
+                    });
+                } else if (!proKey) {
+                    // Pro subscription exists but Pro key is not configured – fail loudly instead
+                    // of silently using the system key.
+                    throw new Error(
+                        "Pro key is not configured for this app. Please contact the owner or switch to BYOK.",
+                    );
+                } else {
+                    // Cap exhausted and no BYOK → do NOT fall back to system key
+                    throw new Error(
+                        "Pro token allowance exceeded for this period. Your subscription will renew next month.",
+                    );
+                }
+            } else if (user.openaiApiKey) {
+                // BYOK outside of Pro period
+                useByok = true;
+            } else {
+                // Free user - use admin key (message count already checked in sendMessage)
+                apiKey = process.env.OPENAI_API_KEY;
+            }
+
+            if (useByok) {
+                apiKey = await ctx.runAction(internal.crypto.decryptApiKey, {
+                    encryptedData: user.openaiApiKey!,
+                });
+            }
+            
+            if (!apiKey) {
+                throw new Error("No API key configured. Please contact support.");
+            }
+
+            // Import dependencies
+            const { createAgent, createFreestyleTools } = await import("./agent");
+            const { stepCountIs } = await import("@convex-dev/agent");
+            const { freestyle } = await import("../lib/freestyle");
+            const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
+            const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+
+            // Connect to MCP server once
+            const devServer = await freestyle.requestDevServer({ repoId: args.repoId });
+            const mcpClient = new Client(
+                { name: "game-builder", version: "1.0.0" },
+                { capabilities: {} }
+            );
+            await mcpClient.connect(new StreamableHTTPClientTransport(new URL(devServer.mcpEphemeralUrl)));
+
+            // Create Freestyle tools that use the MCP client
+            const freestyleTools = createFreestyleTools(mcpClient);
+            
+            console.log(`✅ Created ${Object.keys(freestyleTools).length} Freestyle tools`);
+
+            // Create agent with user's API key
+            const agent = createAgent(apiKey);
+
+            // Use the agent's streamText WITH our custom Freestyle tools
+            const result = await agent.streamText(
+                ctx,
+                { threadId: args.threadId },
+                {
+                    promptMessageId: args.promptMessageId,
+                    tools: freestyleTools,
+                    stopWhen: stepCountIs(15),
+                },
+                {
+                    saveStreamDeltas: {
+                        chunking: "word",
+                        throttleMs: 100,
+                    },
+                }
+            );
+
+            // Get the final text and token usage
+            const finalText = await result.text;
+            const usage = await result.usage;
+            const totalTokens = usage?.totalTokens ?? 0;
+
+            // Close MCP connection
+            await mcpClient.close();
+
+            // Save the final response text and token usage to the messages table
+            if (finalText) {
+                await ctx.runMutation(internal.chat.saveAgentResponse, {
+                    chatId: args.chatId,
+                    text: finalText,
+                    totalTokens,
+                });
+            }
+
+            // Aggregate token usage on the user record
+            if (totalTokens > 0) {
+                await ctx.runMutation(internal.users.addTokenUsage, {
+                    userId: args.userId,
+                    totalTokens,
+                });
+            }
+
+            // Mark chat as user's turn (allows user to send messages again)
+            await ctx.runMutation(internal.chat.setAiTurn, {
                 chatId: args.chatId,
-                text: finalText,
+                isAiTurn: false,
             });
+        } catch (error) {
+            console.error("Error processing message:", error);
+            
+            // Ensure AI turn is reset even on error
+            await ctx.runMutation(internal.chat.setAiTurn, {
+                chatId: args.chatId,
+                isAiTurn: false,
+            });
+            
+            // Re-throw the error
+            throw error;
         }
     },
 });
@@ -434,12 +553,14 @@ export const saveAgentResponse = internalMutation({
     args: {
         chatId: v.id("chats"),
         text: v.string(),
+        totalTokens: v.optional(v.number()),
     },
     handler: async (ctx, args) => {
         await ctx.db.insert("messages", {
             chatId: args.chatId,
             text: args.text,
             sender: "assistant",
+            totalTokens: args.totalTokens,
         });
     },
 });
@@ -453,6 +574,19 @@ export const getUser = internalQuery({
     },
     handler: async (ctx, args) => {
         return await ctx.db.get(args.userId);
+    },
+});
+
+/**
+ * Set AI turn flag for a chat (internal use only)
+ */
+export const setAiTurn = internalMutation({
+    args: {
+        chatId: v.id("chats"),
+        isAiTurn: v.boolean(),
+    },
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.chatId, { isAiTurn: args.isAiTurn });
     },
 });
 

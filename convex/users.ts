@@ -47,6 +47,8 @@ export const syncUser = mutation({
             await ctx.db.patch(existingUser._id, {
                 email: identity.email || existingUser.email,
                 name: identity.name || existingUser.name,
+                // Default tier if not set
+                tier: existingUser.tier || (existingUser.isAdmin ? "admin" : "free"),
             });
             return existingUser._id;
         } else {
@@ -56,6 +58,7 @@ export const syncUser = mutation({
                 clerkId: identity.subject,
                 email: identity.email || "",
                 name: identity.name,
+                tier: "free",
             });
             console.log("Created user:", userId);
             return userId;
@@ -201,6 +204,8 @@ export const getApiKey = query({
             return {
                 hasKey: true,
                 isAdmin: true,
+                isFreeUser: false,
+                remainingMessages: null,
             };
         }
 
@@ -208,6 +213,623 @@ export const getApiKey = query({
         return {
             hasKey: !!user.openaiApiKey,
             isAdmin: false,
+            isFreeUser: false,
+            remainingMessages: null,
+        };
+    },
+});
+
+/**
+ * Check if user needs daily message count reset and get remaining messages.
+ * Free users (no API key, not admin) get 5 messages per day.
+ */
+export const getRemainingMessages = query({
+    args: {},
+    handler: async (ctx) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) {
+            return null;
+        }
+
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+            .first();
+
+        if (!user) {
+            return null;
+        }
+
+        const now = Date.now();
+        const inProPeriod =
+            (user.proSubscriptionStatus === "active" ||
+                user.proSubscriptionStatus === "canceled") &&
+            typeof user.proCurrentPeriodEnd === "number" &&
+            now <= user.proCurrentPeriodEnd;
+
+        // Admin, BYOK, or users in an active Pro period have no daily free-message limit
+        if (user.isAdmin || user.openaiApiKey || inProPeriod) {
+            return {
+                isFreeUser: false,
+                remainingMessages: null,
+                hasKey: !!user.openaiApiKey,
+                isAdmin: !!user.isAdmin,
+            };
+        }
+
+        // Free user - check daily limit
+        const FREE_DAILY_LIMIT = 5;
+        const lastReset = user.lastMessageReset || 0;
+        
+        // Check if we need to reset (midnight GMT)
+        const todayMidnightGMT = new Date(now);
+        todayMidnightGMT.setUTCHours(0, 0, 0, 0);
+        const lastResetDate = new Date(lastReset);
+        lastResetDate.setUTCHours(0, 0, 0, 0);
+        
+        const needsReset = todayMidnightGMT.getTime() > lastResetDate.getTime();
+        const messageCount = needsReset ? 0 : (user.dailyMessageCount || 0);
+        
+        return {
+            isFreeUser: true,
+            remainingMessages: Math.max(0, FREE_DAILY_LIMIT - messageCount),
+            hasKey: false,
+            isAdmin: false,
+            totalDailyLimit: FREE_DAILY_LIMIT,
+        };
+    },
+});
+
+/**
+ * Internal mutation to reset daily message count for a user.
+ */
+export const resetDailyMessageCount = internalMutation({
+    args: {
+        userId: v.id("users"),
+    },
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.userId, {
+            dailyMessageCount: 0,
+            lastMessageReset: Date.now(),
+        });
+    },
+});
+
+/**
+ * Internal mutation to increment user's daily message count.
+ * Returns the new count.
+ */
+export const incrementMessageCount = internalMutation({
+    args: {
+        userId: v.id("users"),
+    },
+    handler: async (ctx, args) => {
+        const user = await ctx.db.get(args.userId);
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const FREE_DAILY_LIMIT = 5;
+        const now = Date.now();
+        const lastReset = user.lastMessageReset || 0;
+        
+        // Check if we need to reset (midnight GMT)
+        const todayMidnightGMT = new Date(now);
+        todayMidnightGMT.setUTCHours(0, 0, 0, 0);
+        const lastResetDate = new Date(lastReset);
+        lastResetDate.setUTCHours(0, 0, 0, 0);
+        
+        const needsReset = todayMidnightGMT.getTime() > lastResetDate.getTime();
+        
+        let newCount: number;
+        if (needsReset) {
+            newCount = 1;
+            await ctx.db.patch(args.userId, {
+                dailyMessageCount: 1,
+                lastMessageReset: now,
+            });
+        } else {
+            newCount = (user.dailyMessageCount || 0) + 1;
+            await ctx.db.patch(args.userId, {
+                dailyMessageCount: newCount,
+            });
+        }
+
+        // Check if user exceeded limit
+        if (newCount > FREE_DAILY_LIMIT) {
+            throw new Error(`Daily message limit exceeded. Free users get ${FREE_DAILY_LIMIT} messages per day. Please add your own OpenAI API key to continue.`);
+        }
+
+        return newCount;
+    },
+});
+
+/**
+ * Internal mutation to reset all free users' daily message counts.
+ * Called by cron job at midnight GMT.
+ */
+export const resetAllDailyMessageCounts = internalMutation({
+    args: {},
+    handler: async (ctx) => {
+        const now = Date.now();
+        
+        // Get all users who are free users (no API key, not admin)
+        const allUsers = await ctx.db.query("users").collect();
+        
+        let resetCount = 0;
+        for (const user of allUsers) {
+            // Only reset for free users (no API key, not admin)
+            const isFreeUser = !user.isAdmin && !user.openaiApiKey;
+            if (isFreeUser && (user.dailyMessageCount || 0) > 0) {
+                await ctx.db.patch(user._id, {
+                    dailyMessageCount: 0,
+                    lastMessageReset: now,
+                });
+                resetCount++;
+            }
+        }
+
+        // Also reset global free usage metrics for the new day
+        const globalUsage = await ctx.db
+            .query("usage")
+            .withIndex("by_key", (q) => q.eq("key", "global"))
+            .first();
+        
+        if (globalUsage) {
+            await ctx.db.patch(globalUsage._id, {
+                freeTokensUsedToday: 0,
+                freeCapReachedToday: false,
+                lastFreeUsageReset: now,
+            });
+        } else {
+            await ctx.db.insert("usage", {
+                key: "global",
+                freeTokensUsedToday: 0,
+                freeCapReachedToday: false,
+                lastFreeUsageReset: now,
+            });
+        }
+        
+        console.log(`Reset daily message counts for ${resetCount} free users at ${new Date(now).toISOString()}`);
+        return resetCount;
+    },
+});
+
+/**
+ * Internal mutation to exhaust all free users' daily message allowance.
+ * This is called when the shared free-token pool for the day is depleted.
+ */
+export const exhaustAllFreeDailyMessageCounts = internalMutation({
+    args: {},
+    handler: async (ctx) => {
+        const now = Date.now();
+        const FREE_DAILY_LIMIT = 5;
+
+        const allUsers = await ctx.db.query("users").collect();
+
+        let updatedCount = 0;
+        for (const user of allUsers) {
+            const isFreeUser = !user.isAdmin && !user.openaiApiKey;
+            if (isFreeUser) {
+                await ctx.db.patch(user._id, {
+                    dailyMessageCount: FREE_DAILY_LIMIT,
+                    lastMessageReset: now,
+                });
+                updatedCount++;
+            }
+        }
+
+        console.log(
+            `Exhausted remaining daily messages for ${updatedCount} free users at ${new Date(
+                now,
+            ).toISOString()}`,
+        );
+        return updatedCount;
+    },
+});
+
+/**
+ * Mark that we've notified the user about Pro → BYOK fallback this period.
+ */
+export const markProByokFallbackNotified = internalMutation({
+    args: {
+        userId: v.id("users"),
+    },
+    handler: async (ctx, args) => {
+        const user = await ctx.db.get(args.userId);
+        if (!user) {
+            return;
+        }
+
+        if (!user.proByokFallbackNotifiedThisPeriod) {
+            await ctx.db.patch(args.userId, {
+                proByokFallbackNotifiedThisPeriod: true,
+            });
+        }
+    },
+});
+
+/**
+ * Internal mutation to downgrade any users whose Pro period has ended.
+ * This is called from a daily cron job rather than scheduling per-user jobs.
+ */
+export const downgradeExpiredProUsers = internalMutation({
+    args: {},
+    handler: async (ctx) => {
+        const now = Date.now();
+        const allUsers = await ctx.db.query("users").collect();
+
+        let downgraded = 0;
+        for (const user of allUsers) {
+            const inProPeriod =
+                (user.proSubscriptionStatus === "active" ||
+                    user.proSubscriptionStatus === "canceled") &&
+                typeof user.proCurrentPeriodEnd === "number" &&
+                now <= user.proCurrentPeriodEnd;
+
+            // If user is non-admin, subscription is canceled, and the Pro period has ended,
+            // downgrade them back to the free tier.
+            if (
+                !user.isAdmin &&
+                user.proSubscriptionStatus === "canceled" &&
+                !inProPeriod &&
+                typeof user.proCurrentPeriodEnd === "number"
+            ) {
+                await ctx.db.patch(user._id, {
+                    tier: "free",
+                    proSubscriptionStatus: undefined,
+                    proCurrentPeriodEnd: undefined,
+                    proTokensUsedThisPeriod: undefined,
+                    proMonthlyTokenLimit: undefined,
+                });
+                downgraded++;
+            }
+        }
+
+        console.log(
+            `Downgraded ${downgraded} users from Pro to Free at ${new Date(now).toISOString()}`,
+        );
+        return downgraded;
+    },
+});
+
+/**
+ * Internal mutation scheduled at the end of a Pro period.
+ *
+ * - If the subscription is still "active" at that time, it renews:
+ *   - advances the period end by another 30 days
+ *   - resets the period token counter
+ *   - schedules the next period-end task
+ * - If the subscription was "canceled", it downgrades the user to the free tier.
+ */
+export const handleSubscriptionPeriodEnd = internalMutation({
+    args: {
+        userId: v.id("users"),
+    },
+    handler: async (ctx, args) => {
+        const user = await ctx.db.get(args.userId);
+        if (!user) {
+            return;
+        }
+
+        const now = Date.now();
+        const currentEnd = user.proCurrentPeriodEnd;
+
+        if (!currentEnd || now < currentEnd) {
+            // Period hasn't actually ended yet (or no period) – nothing to do.
+            return;
+        }
+
+        if (user.proSubscriptionStatus === "active") {
+            // Auto-renew: extend by another 30 days from the previous end,
+            // reset the per-period token counter, and schedule the next period end.
+            const nextEnd = currentEnd + 30 * 24 * 60 * 60 * 1000;
+
+            // Mock payment step for renewal – this is where a real billing
+            // integration would be called. Currently it is a no-op that
+            // just records that a renewal "payment" was attempted.
+            await ctx.runMutation(internal.users.chargeForProRenewal, {
+                userId: args.userId,
+                amountCents: 2000, // $20 in cents
+            });
+
+            await ctx.db.patch(args.userId, {
+                tier: user.isAdmin ? "admin" : "pro",
+                proSubscriptionStatus: "active",
+                proCurrentPeriodEnd: nextEnd,
+                proTokensUsedThisPeriod: 0,
+                proMonthlyTokenLimit: user.proMonthlyTokenLimit ?? 25_000_000,
+                proByokFallbackNotifiedThisPeriod: false,
+            });
+
+            await ctx.scheduler.runAt(
+                nextEnd,
+                internal.users.handleSubscriptionPeriodEnd,
+                { userId: args.userId },
+            );
+        } else if (user.proSubscriptionStatus === "canceled") {
+            // End of a canceled period: fully downgrade to free.
+            await ctx.db.patch(args.userId, {
+                tier: "free",
+                proSubscriptionStatus: undefined,
+                proCurrentPeriodEnd: undefined,
+                proTokensUsedThisPeriod: undefined,
+                proMonthlyTokenLimit: undefined,
+                proByokFallbackNotifiedThisPeriod: undefined,
+            });
+        }
+    },
+});
+
+/**
+ * Internal no-op "payment" mutation for Pro renewals.
+ *
+ * This is the integration point where a real billing provider
+ * (Stripe, Lemon Squeezy, etc.) would be called. For now it
+ * only logs the attempt so we can wire up billing later without
+ * changing the subscription flow.
+ */
+export const chargeForProRenewal = internalMutation({
+    args: {
+        userId: v.id("users"),
+        amountCents: v.number(),
+    },
+    handler: async (ctx, args) => {
+        const user = await ctx.db.get(args.userId);
+        if (!user) {
+            return;
+        }
+
+        console.log(
+            `Mock Pro renewal charge for user ${args.userId} - amount: ${
+                args.amountCents / 100
+            } USD`,
+        );
+        // No-op: add real billing integration here later.
+    },
+});
+
+/**
+ * Internal mutation to add token usage to a user aggregate.
+ * This is called after an AI response is generated.
+ */
+export const addTokenUsage = internalMutation({
+    args: {
+        userId: v.id("users"),
+        totalTokens: v.number(),
+    },
+    handler: async (ctx, args) => {
+        const user = await ctx.db.get(args.userId);
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const now = Date.now();
+        const updates: Record<string, unknown> = {};
+
+        // Global token aggregate
+        const currentTotal = user.totalTokensUsed || 0;
+        updates.totalTokensUsed = currentTotal + args.totalTokens;
+
+        // Pro-period accounting (if applicable).
+        // Pro remains active until the end of the period even if canceled.
+        const inProPeriod =
+            user.tier === "pro" &&
+            (user.proSubscriptionStatus === "active" ||
+                user.proSubscriptionStatus === "canceled") &&
+            typeof user.proCurrentPeriodEnd === "number" &&
+            now <= user.proCurrentPeriodEnd;
+
+        const monthlyLimit = user.proMonthlyTokenLimit ?? 25_000_000;
+
+        if (inProPeriod) {
+            const tokensUsed = (user.proTokensUsedThisPeriod || 0) + args.totalTokens;
+            updates.proTokensUsedThisPeriod = tokensUsed;
+            updates.proMonthlyTokenLimit = monthlyLimit;
+        }
+
+        // Persist per-user aggregates
+        await ctx.db.patch(args.userId, updates);
+
+        // Track global free-tier usage and enforce a shared daily cap.
+        const isFreeTierUser =
+            !user.isAdmin &&
+            !user.openaiApiKey &&
+            !inProPeriod;
+
+        if (isFreeTierUser) {
+            const todayUsage = await ctx.db
+                .query("usage")
+                .withIndex("by_key", (q) => q.eq("key", "global"))
+                .first();
+
+            const previousTokens = todayUsage?.freeTokensUsedToday || 0;
+            const newTotal = previousTokens + args.totalTokens;
+            const alreadyCapped = todayUsage?.freeCapReachedToday || false;
+            const CAP = 1_000_000;
+
+            // If we cross the shared cap for the first time today, exhaust all
+            // free users' remaining daily messages.
+            if (!alreadyCapped && newTotal > CAP) {
+                await ctx.runMutation(internal.users.exhaustAllFreeDailyMessageCounts, {});
+            }
+
+            if (todayUsage) {
+                await ctx.db.patch(todayUsage._id, {
+                    freeTokensUsedToday: newTotal,
+                    freeCapReachedToday: alreadyCapped || newTotal > CAP,
+                });
+            } else {
+                await ctx.db.insert("usage", {
+                    key: "global",
+                    freeTokensUsedToday: newTotal,
+                    freeCapReachedToday: newTotal > CAP,
+                    lastFreeUsageReset: now,
+                });
+            }
+        }
+    },
+});
+
+/**
+ * Start a (mock) Pro subscription for the current user.
+ * No real payment is processed; this simply marks the user as Pro.
+ */
+export const startProSubscription = mutation({
+    args: {},
+    handler: async (ctx) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) {
+            throw new Error("Not authenticated");
+        }
+
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+            .first();
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const now = Date.now();
+        const monthlyLimit = user.proMonthlyTokenLimit ?? 25_000_000;
+
+        const inExistingCanceledPeriod =
+            user.proSubscriptionStatus === "canceled" &&
+            typeof user.proCurrentPeriodEnd === "number" &&
+            now <= user.proCurrentPeriodEnd;
+
+        // If the user has canceled but their Pro period has not yet ended,
+        // "continuing" the subscription just flips the status back to active
+        // and keeps the same currentPeriodEnd and token counters. The existing
+        // scheduled renewal/cancellation task will handle the period end.
+        if (inExistingCanceledPeriod) {
+            await ctx.db.patch(user._id, {
+                tier: user.isAdmin ? "admin" : "pro",
+                proSubscriptionStatus: "active",
+                proByokFallbackNotifiedThisPeriod: false,
+            });
+
+            return {
+                status: "resumed" as const,
+                currentPeriodEnd: user.proCurrentPeriodEnd!,
+                monthlyLimit,
+            };
+        }
+
+        // Otherwise start a brand new Pro period and schedule its end.
+        const periodEnd = now + 30 * 24 * 60 * 60 * 1000; // ~30 days
+
+        await ctx.db.patch(user._id, {
+            tier: user.isAdmin ? "admin" : "pro",
+            proSubscriptionStatus: "active",
+            proCurrentPeriodEnd: periodEnd,
+            proTokensUsedThisPeriod: 0,
+            proMonthlyTokenLimit: monthlyLimit,
+        });
+
+        await ctx.scheduler.runAt(
+            periodEnd,
+            internal.users.handleSubscriptionPeriodEnd,
+            { userId: user._id },
+        );
+
+        return {
+            status: "success" as const,
+            currentPeriodEnd: periodEnd,
+            monthlyLimit,
+        };
+    },
+});
+
+/**
+ * Cancel the user's Pro subscription.
+ * Subscription stays active until the current period end.
+ */
+export const cancelProSubscription = mutation({
+    args: {},
+    handler: async (ctx) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) {
+            throw new Error("Not authenticated");
+        }
+
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+            .first();
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const currentPeriodEnd = user.proCurrentPeriodEnd ?? Date.now();
+
+        await ctx.db.patch(user._id, {
+            proSubscriptionStatus: "canceled",
+        });
+
+        return {
+            status: "success" as const,
+            currentPeriodEnd,
+        };
+    },
+});
+
+/**
+ * Returns a high-level billing/tier status for the current user.
+ */
+export const getBillingStatus = query({
+    args: {},
+    handler: async (ctx) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) {
+            return null;
+        }
+
+        const user = await ctx.db
+            .query("users")
+            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+            .first();
+
+        if (!user) {
+            return null;
+        }
+
+        const now = Date.now();
+        const inProPeriod =
+            (user.proSubscriptionStatus === "active" ||
+                user.proSubscriptionStatus === "canceled") &&
+            typeof user.proCurrentPeriodEnd === "number" &&
+            now <= user.proCurrentPeriodEnd;
+
+        const baseTier = user.isAdmin ? "admin" : user.tier || "free";
+        const tier =
+            baseTier === "admin"
+                ? "admin"
+                : inProPeriod
+                ? "pro"
+                : user.openaiApiKey
+                ? "byok"
+                : "free";
+
+        const monthlyLimit = user.proMonthlyTokenLimit ?? 25_000_000;
+        const used = user.proTokensUsedThisPeriod || 0;
+
+        return {
+            tier,
+            isAdmin: !!user.isAdmin,
+            pro: {
+                status: user.proSubscriptionStatus ?? null,
+                isActive: inProPeriod,
+                currentPeriodEnd: user.proCurrentPeriodEnd ?? null,
+                tokensUsedThisPeriod: used,
+                monthlyLimit,
+                remainingTokens: Math.max(0, monthlyLimit - used),
+                byokFallbackNotifiedThisPeriod:
+                    user.proByokFallbackNotifiedThisPeriod ?? false,
+            },
         };
     },
 });

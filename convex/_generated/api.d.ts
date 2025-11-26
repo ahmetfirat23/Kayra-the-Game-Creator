@@ -10,6 +10,7 @@
 
 import type * as agent from "../agent.js";
 import type * as chat from "../chat.js";
+import type * as crons from "../crons.js";
 import type * as crypto from "../crypto.js";
 import type * as users from "../users.js";
 
@@ -22,6 +23,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   agent: typeof agent;
   chat: typeof chat;
+  crons: typeof crons;
   crypto: typeof crypto;
   users: typeof users;
 }>;

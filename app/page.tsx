@@ -8,7 +8,111 @@ import { Id } from "../convex/_generated/dataModel";
 import { FreestyleDevServer } from "freestyle-sandboxes/react/dev-server";
 import { requestDevServer } from "../lib/freestyle-actions";
 import ReactMarkdown from "react-markdown";
-import { UserButton } from "@clerk/nextjs";
+import { UserButton, SignInButton, useUser } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
+
+/**
+ * Landing page component shown to non-authenticated users
+ */
+function LandingPage() {
+  return (
+    <main className="h-screen flex flex-col bg-gradient-to-br from-[#E8DCC8] via-[#F5EFE3] to-[#D4C5A9] dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-auto">
+      {/* Hero Section */}
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
+        <div className="max-w-5xl mx-auto text-center w-full">
+          {/* Logo and Title */}
+          <div className="mb-6">
+            <div className="flex items-center justify-center gap-3 mb-3">
+              <div className="text-5xl">🌳</div>
+            </div>
+            <h1 className="text-5xl font-bold mb-0 pb-1 leading-tight bg-gradient-to-r from-[#2D1B00] via-[#5B4332] to-[#5A8A5E] dark:from-green-400 dark:via-blue-400 dark:to-purple-400 bg-clip-text text-transparent">
+              Kayra
+            </h1>
+            <p className="text-xl text-[#5B4332] dark:text-gray-300 font-medium mb-3">
+              the Game Creator
+            </p>
+            <p className="text-base text-[#6B5844] dark:text-gray-400 max-w-2xl mx-auto">
+              Transform your game ideas into reality with AI-powered 3D game creation
+            </p>
+          </div>
+
+          {/* Features Grid */}
+          <div className="grid md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-[#B5A58D] dark:border-gray-700">
+              <div className="text-3xl mb-2">🎮</div>
+              <h3 className="text-base font-bold text-[#2D1B00] dark:text-white mb-1">
+                Create 3D Games
+              </h3>
+              <p className="text-xs text-[#5B4332] dark:text-gray-400">
+                Tell Kayra your game idea and watch it come to life in real-time
+              </p>
+            </div>
+
+            <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-[#B5A58D] dark:border-gray-700">
+              <div className="text-3xl mb-2">⚡</div>
+              <h3 className="text-base font-bold text-[#2D1B00] dark:text-white mb-1">
+                Instant Preview
+              </h3>
+              <p className="text-xs text-[#5B4332] dark:text-gray-400">
+                See your game running live as Kayra builds it for you
+              </p>
+            </div>
+
+            <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-[#B5A58D] dark:border-gray-700">
+              <div className="text-3xl mb-2">🤖</div>
+              <h3 className="text-base font-bold text-[#2D1B00] dark:text-white mb-1">
+                AI-Powered
+              </h3>
+              <p className="text-xs text-[#5B4332] dark:text-gray-400">
+                Advanced AI understands your vision and creates the code
+              </p>
+            </div>
+          </div>
+
+          {/* Pricing Info */}
+          <div className="bg-gradient-to-r from-[#5A8A5E]/20 to-[#D4C5A9]/20 dark:from-green-900/30 dark:to-blue-900/30 backdrop-blur-sm rounded-2xl p-6 mb-6 border-2 border-[#5A8A5E] dark:border-green-700 shadow-xl">
+            <div className="text-2xl mb-2">🎁</div>
+            <h3 className="text-xl font-bold text-[#2D1B00] dark:text-white mb-2">
+              Start Creating for Free
+            </h3>
+            <p className="text-base text-[#4A3425] dark:text-gray-300 mb-1">
+              Get <span className="font-bold text-[#5A8A5E] dark:text-green-400 text-lg">5 free messages per day</span> to bring your game ideas to life
+            </p>
+            <p className="text-xs text-[#6B5844] dark:text-gray-400">
+              No credit card required • Start building immediately
+            </p>
+          </div>
+
+          {/* CTA Button */}
+          <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+            <SignInButton mode="modal">
+              <button className="bg-[#5A8A5E] dark:bg-green-600 hover:bg-[#4A7C4E] dark:hover:bg-green-700 text-white font-bold text-base px-8 py-3 rounded-lg shadow-lg transform transition hover:scale-105">
+                Get Started Free
+              </button>
+            </SignInButton>
+            <p className="text-xs text-[#6B5844] dark:text-gray-500">
+              Already have an account? 
+              <SignInButton mode="modal">
+                <button className="ml-1 text-[#5A8A5E] dark:text-green-400 font-bold hover:underline">
+                  Sign in
+                </button>
+              </SignInButton>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <footer className="py-4 border-t border-[#B5A58D] dark:border-gray-700 flex-shrink-0">
+        <div className="max-w-4xl mx-auto px-4 text-center">
+          <p className="text-xs text-[#6B5844] dark:text-gray-500">
+            © 2025 Kayra • Powered by OpenAI • Built for Creators
+          </p>
+        </div>
+      </footer>
+    </main>
+  );
+}
 
 /**
  * Message component that renders a single message with smooth text streaming.
@@ -18,13 +122,28 @@ function MessageComponent({ message }: { message: UIMessage }) {
   const [visibleText] = useSmoothText(message.text, {
     startStreaming: message.status === "streaming",
   });
+  const [expandedTools, setExpandedTools] = useState<Set<number>>(new Set());
 
   const isUser = message.role === "user";
   const isStreaming = message.status === "streaming";
+  const usage = (message.metadata as { usage?: { totalTokens?: number } } | undefined)?.usage;
+  const totalTokens = !isUser ? usage?.totalTokens : undefined;
 
   // Extract tool calls from message parts
   type MessagePart = { type?: string; output?: string | object; [key: string]: unknown };
   const toolCalls = (message.parts as MessagePart[] | undefined)?.filter((part) => part.type?.startsWith('tool-')) || [];
+
+  const toggleTool = (idx: number) => {
+    setExpandedTools(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(idx)) {
+        newSet.delete(idx);
+      } else {
+        newSet.add(idx);
+      }
+      return newSet;
+    });
+  };
 
   return (
     <div 
@@ -35,11 +154,16 @@ function MessageComponent({ message }: { message: UIMessage }) {
       }`}
     >
       <div className={`text-xs mb-1 uppercase font-bold flex items-center gap-2 ${
-        isUser ? "text-[#F5EFE3] dark:text-white" : "text-[#5B4332] dark:text-gray-300"
+        isUser ? "text-white dark:text-white" : "text-[#5B4332] dark:text-gray-300"
       }`}>
         <span>{isUser ? "You" : "Kayra"}</span>
         {isStreaming && (
           <span className="text-xs animate-pulse">●</span>
+        )}
+        {!isUser && typeof totalTokens === "number" && totalTokens > 0 && (
+          <span className="ml-auto text-[10px] font-normal opacity-70 lowercase">
+            {totalTokens} tokens
+          </span>
         )}
       </div>
       
@@ -48,18 +172,18 @@ function MessageComponent({ message }: { message: UIMessage }) {
         <div className="mb-2 prose prose-sm dark:prose-invert max-w-none">
           <ReactMarkdown
             components={{
-              p: ({ children }) => <p className="mb-2 leading-relaxed text-[#4A3425] dark:text-gray-200">{children}</p>,
-              strong: ({ children }) => <strong className="font-bold text-[#2D1B00] dark:text-white">{children}</strong>,
-              em: ({ children }) => <em className="italic text-[#4A3425] dark:text-gray-200">{children}</em>,
-              h1: ({ children }) => <h1 className="text-xl font-bold mb-2 mt-3 text-[#2D1B00] dark:text-white">{children}</h1>,
-              h2: ({ children }) => <h2 className="text-lg font-bold mb-2 mt-3 text-[#2D1B00] dark:text-white">{children}</h2>,
-              h3: ({ children }) => <h3 className="text-base font-bold mb-2 mt-2 text-[#2D1B00] dark:text-white">{children}</h3>,
-              ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1 text-[#4A3425] dark:text-gray-200">{children}</ul>,
-              ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1 text-[#4A3425] dark:text-gray-200">{children}</ol>,
+              p: ({ children }) => <p className={`mb-2 leading-relaxed ${isUser ? 'text-gray-200' : 'text-[#4A3425]'} dark:text-gray-200`}>{children}</p>,
+              strong: ({ children }) => <strong className={`font-bold ${isUser ? 'text-white' : 'text-[#2D1B00]'} dark:text-white`}>{children}</strong>,
+              em: ({ children }) => <em className={`italic ${isUser ? 'text-gray-200' : 'text-[#4A3425]'} dark:text-gray-200`}>{children}</em>,
+              h1: ({ children }) => <h1 className={`text-xl font-bold mb-2 mt-3 ${isUser ? 'text-white' : 'text-[#2D1B00]'} dark:text-white`}>{children}</h1>,
+              h2: ({ children }) => <h2 className={`text-lg font-bold mb-2 mt-3 ${isUser ? 'text-white' : 'text-[#2D1B00]'} dark:text-white`}>{children}</h2>,
+              h3: ({ children }) => <h3 className={`text-base font-bold mb-2 mt-2 ${isUser ? 'text-white' : 'text-[#2D1B00]'} dark:text-white`}>{children}</h3>,
+              ul: ({ children }) => <ul className={`list-disc list-inside mb-2 space-y-1 ${isUser ? 'text-gray-200' : 'text-[#4A3425]'} dark:text-gray-200`}>{children}</ul>,
+              ol: ({ children }) => <ol className={`list-decimal list-inside mb-2 space-y-1 ${isUser ? 'text-gray-200' : 'text-[#4A3425]'} dark:text-gray-200`}>{children}</ol>,
               li: ({ children }) => <li className="ml-2">{children}</li>,
-              code: ({ children }) => <code className="bg-[#B5A58D] dark:bg-gray-800 px-1 py-0.5 rounded text-sm text-[#2D1B00] dark:text-gray-200">{children}</code>,
-              pre: ({ children }) => <pre className="bg-[#B5A58D] dark:bg-gray-800 p-2 rounded overflow-x-auto mb-2 text-[#2D1B00] dark:text-gray-200">{children}</pre>,
-              blockquote: ({ children }) => <blockquote className="border-l-4 border-[#5A8A5E] dark:border-gray-600 pl-3 italic my-2 text-[#4A3425] dark:text-gray-300">{children}</blockquote>,
+              code: ({ children }) => <code className={`px-1 py-0.5 rounded text-sm ${isUser ? 'bg-[#4A7C4E] text-gray-200' : 'bg-[#B5A58D] text-[#2D1B00]'} dark:bg-gray-800 dark:text-gray-200`}>{children}</code>,
+              pre: ({ children }) => <pre className={`p-2 rounded overflow-x-auto mb-2 ${isUser ? 'bg-[#4A7C4E] text-gray-200' : 'bg-[#B5A58D] text-[#2D1B00]'} dark:bg-gray-800 dark:text-gray-200`}>{children}</pre>,
+              blockquote: ({ children }) => <blockquote className={`border-l-4 pl-3 italic my-2 ${isUser ? 'border-white text-gray-200' : 'border-[#5A8A5E] text-[#4A3425]'} dark:border-gray-600 dark:text-gray-300`}>{children}</blockquote>,
             }}
           >
             {visibleText}
@@ -70,18 +194,34 @@ function MessageComponent({ message }: { message: UIMessage }) {
       {/* Display tool calls */}
       {toolCalls.length > 0 && (
         <div className="mt-2 space-y-2">
-          {toolCalls.map((tool, idx: number) => (
-            <div key={idx} className="bg-[#B5A58D] dark:bg-gray-800 p-2 rounded text-xs border border-[#9A8A70] dark:border-gray-700">
-              <div className="text-[#5A8A5E] dark:text-blue-300 font-mono mb-1 font-bold">
-                🔧 {tool.type ? tool.type.replace('tool-', '') : 'tool'}
+          {toolCalls.map((tool, idx: number) => {
+            const toolName = tool.type ? tool.type.replace('tool-', '') : 'tool';
+            const isFileOperation = toolName.toLowerCase().includes('write') || toolName.toLowerCase().includes('file');
+            const isExpanded = expandedTools.has(idx);
+            
+            return (
+              <div key={idx} className="bg-[#B5A58D] dark:bg-gray-800 rounded text-xs border border-[#9A8A70] dark:border-gray-700 overflow-hidden">
+                <button
+                  onClick={() => toggleTool(idx)}
+                  className="w-full p-3 text-left hover:bg-[#A59580] dark:hover:bg-gray-700 transition-colors flex items-center justify-between gap-2"
+                >
+                  <div className="text-[#5A8A5E] dark:text-blue-300 font-mono font-bold flex items-center gap-2">
+                    {isFileOperation ? '📝' : '🔧'} {toolName}
+                  </div>
+                  <div className={`text-[#5A8A5E] dark:text-blue-300 transition-transform duration-200 ${isExpanded ? 'rotate-90' : 'rotate-0'}`}>
+                    ▶
+                  </div>
+                </button>
+                {isExpanded && tool.output && (
+                  <div className="border-t border-[#9A8A70] dark:border-gray-700 bg-[#2D1B00]/5 dark:bg-black/30 p-3">
+                    <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed">
+                      {typeof tool.output === 'string' ? tool.output : JSON.stringify(tool.output, null, 2)}
+                    </pre>
+                  </div>
+                )}
               </div>
-              {tool.output && (
-                <div className="text-[#2D1B00] dark:text-gray-400 whitespace-pre-wrap max-h-32 overflow-y-auto">
-                  {typeof tool.output === 'string' ? tool.output : JSON.stringify(tool.output, null, 2)}
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -89,6 +229,8 @@ function MessageComponent({ message }: { message: UIMessage }) {
 }
 
 export default function Home() {
+  const { isSignedIn, isLoaded } = useUser();
+  const router = useRouter();
   const [input, setInput] = useState("");
   const [selectedChatId, setSelectedChatId] = useState<Id<"chats"> | null>(null);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
@@ -96,21 +238,21 @@ export default function Home() {
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [savingKey, setSavingKey] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "error" | "success" | "info" } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
   
   const chats = useQuery(api.chat.listChats) || [];
   const apiKeyStatus = useQuery(api.users.getApiKey);
+  const remainingMessages = useQuery(api.users.getRemainingMessages);
   const syncUser = useMutation(api.users.syncUser);
+  const billingStatus = useQuery(api.users.getBillingStatus);
   const updateApiKey = useAction(api.users.updateApiKey); // Action, not mutation
   const deleteApiKey = useMutation(api.users.deleteApiKey);
   const deleteChat = useMutation(api.chat.deleteChat);
-
-  // Sync user on mount (create user record if doesn't exist)
-  useEffect(() => {
-    console.log("Syncing user...");
-    syncUser()
-      .then((userId) => console.log("User synced:", userId))
-      .catch((err) => console.error("Failed to sync user:", err));
-  }, [syncUser]);
   
   // Get chat to retrieve threadId and repoId
   const selectedChat = useQuery(
@@ -136,6 +278,13 @@ export default function Home() {
   // Check if any message is currently streaming
   const isStreaming = messages.some((msg) => msg.status === "streaming");
   
+  // Check if it's AI's turn (from database - persists across refreshes/chat switches)
+  const isAiTurn = selectedChat?.isAiTurn || false;
+  
+  // Check if current chat is processing - rely on database state (isAiTurn)
+  // plus client state (isSending) only for the brief moment before DB updates
+  const isCurrentChatProcessing = isAiTurn || isSending;
+  
   // Check if any commit has been made - use the same check as we do for display
   type MessagePart = { type?: string; [key: string]: unknown };
   const hasCommitted = messages.some((msg) => 
@@ -152,19 +301,93 @@ export default function Home() {
 
   // Auto-select the first chat when chats are loaded and none is selected
   const firstChatId = chats.length > 0 ? chats[0]._id : null;
+  
+  // Show toast notification
+  const showToast = (message: string, type: "error" | "success" | "info" = "info") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 5000); // Auto-hide after 5 seconds
+  };
+  
+  // Sync user on mount (create user record if doesn't exist)
+  useEffect(() => {
+    if (isSignedIn) {
+      console.log("Syncing user...");
+      syncUser()
+        .then((userId) => console.log("User synced:", userId))
+        .catch((err) => console.error("Failed to sync user:", err));
+    }
+  }, [syncUser, isSignedIn]);
+
   useEffect(() => {
     if (firstChatId && !selectedChatId) {
       setSelectedChatId(firstChatId);
     }
   }, [firstChatId, selectedChatId]);
 
+  // When switching chats, reset isSending (unless still streaming on current chat)
+  useEffect(() => {
+    if (!isStreaming) {
+      setIsSending(false);
+    }
+  }, [selectedChatId, isStreaming]);
+
+  // Reset isSending when streaming starts
+  useEffect(() => {
+    if (isStreaming && isSending) {
+      setIsSending(false);
+    }
+  }, [isStreaming, isSending]);
+
+  // Safety timeout: reset isSending if streaming doesn't start within 10 seconds
+  useEffect(() => {
+    if (isSending) {
+      const timeout = setTimeout(() => {
+        setIsSending(false);
+      }, 10000);
+      return () => clearTimeout(timeout);
+    }
+  }, [isSending]);
+
+  // Notify once per session when we first fall back from Pro key to BYOK.
+  const [shownByokFallbackNotice, setShownByokFallbackNotice] = useState(false);
+  useEffect(() => {
+    if (
+      !shownByokFallbackNotice &&
+      billingStatus?.pro?.byokFallbackNotifiedThisPeriod
+    ) {
+      showToast(
+        "Your Pro allowance is exhausted, so Kayra is now using your own OpenAI API key (BYOK) for this period.",
+        "info",
+      );
+      setShownByokFallbackNotice(true);
+    }
+  }, [billingStatus?.pro?.byokFallbackNotifiedThisPeriod, shownByokFallbackNotice]);
+
+  // Show loading state while checking auth
+  if (!isLoaded) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#E8DCC8] dark:bg-gray-900">
+        <div className="text-center">
+          <div className="text-6xl mb-4 animate-pulse">🌳</div>
+          <p className="text-[#5B4332] dark:text-gray-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show landing page if not signed in
+  if (!isSignedIn) {
+    return <LandingPage />;
+  }
+
   /**
    * Creates a new chat with Freestyle repo and automatically selects it.
    * Shows loading state during creation.
    */
   const handleCreateChat = async () => {
-    // Check if user has API key
-    if (apiKeyStatus && !apiKeyStatus.hasKey && !apiKeyStatus.isAdmin) {
+    // Check if free user has reached daily limit
+    if (remainingMessages?.isFreeUser && remainingMessages.remainingMessages === 0) {
+      showToast(`You've used all ${remainingMessages.totalDailyLimit} free messages today! Add your own OpenAI API key to continue.`, "error");
       setShowApiKeyModal(true);
       return;
     }
@@ -186,7 +409,7 @@ export default function Home() {
       await updateApiKey({ apiKey });
       setShowApiKeyModal(false);
       setApiKey("");
-      alert("✅ API key validated and saved successfully!");
+      showToast("API key validated and saved successfully!", "success");
     } catch (error) {
       console.error("Failed to save API key:", error);
       // Extract the actual error message from Convex error format
@@ -202,70 +425,133 @@ export default function Home() {
           errorMessage = convexMatch ? convexMatch[1] : error.message;
         }
       }
-      alert(`❌ ${errorMessage}`);
+      showToast(errorMessage, "error");
     } finally {
       setSavingKey(false);
     }
   };
 
   const handleDeleteApiKey = async () => {
-    if (!confirm("Delete your API key? You'll need to add it again to create games.")) return;
-    
+    setConfirmDialog({
+      message: "Delete your API key? You'll need to add it again to create games.",
+      onConfirm: async () => {
     setSavingKey(true);
     try {
       await deleteApiKey();
       setShowApiKeyModal(false);
-      alert("API key deleted successfully!");
+          showToast("API key deleted successfully!", "success");
     } catch (error) {
       console.error("Failed to delete API key:", error);
-      alert("Failed to delete API key");
+          showToast("Failed to delete API key", "error");
     } finally {
       setSavingKey(false);
     }
+      }
+    });
   };
 
   const handleDeleteChat = async (chatId: Id<"chats">) => {
-    if (!confirm("Delete this game project? This cannot be undone.")) return;
-    
+    setConfirmDialog({
+      message: "Delete this game project? This cannot be undone.",
+      onConfirm: async () => {
     try {
       await deleteChat({ chatId });
       if (selectedChatId === chatId) {
         setSelectedChatId(null);
       }
+          showToast("Game project deleted", "success");
     } catch (error) {
       console.error("Failed to delete chat:", error);
-      alert("Failed to delete chat");
+          showToast("Failed to delete chat", "error");
+        }
     }
+    });
   };
 
   /**
    * Handles message submission: validates input, clears the input field,
    * and sends the message to the selected chat.
+   * If no chat exists, automatically creates one first.
    */
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !selectedChatId || isStreaming) return;
     
-    // Check if user has API key
-    if (apiKeyStatus && !apiKeyStatus.hasKey && !apiKeyStatus.isAdmin) {
+    // CRITICAL: Block if streaming (from DB) or currently sending
+    if (!input.trim() || isCurrentChatProcessing) {
+      return;
+    }
+    
+    // Check if free user has reached daily limit
+    if (remainingMessages?.isFreeUser && remainingMessages.remainingMessages === 0) {
+      showToast(`You've used all ${remainingMessages.totalDailyLimit} free messages today! Add your own OpenAI API key to continue.`, "error");
       setShowApiKeyModal(true);
       return;
     }
     
-    // Check if repo is ready
-    if (selectedChat?.repoId === "pending") {
-      alert("Repository is still being created. Please wait a moment...");
-      return;
-    }
-    
+    // Capture message text before clearing
     const messageText = input;
-    setInput("");
+    setIsSending(true);
     
     try {
-      await sendMessage({ chatId: selectedChatId, text: messageText });
+      // If no chat is selected, create one first
+      let chatId = selectedChatId;
+      if (!chatId) {
+        try {
+          chatId = await createChat();
+          setSelectedChatId(chatId);
+          // Wait a moment for the repo to start being created
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (error) {
+          console.error("Failed to create chat:", error);
+          showToast("Failed to create a new game project. Please try again.", "error");
+          setIsSending(false);
+          return;
+        }
+      }
+      
+      // Check if repo is ready
+      if (selectedChat?.repoId === "pending") {
+        showToast("Repository is still being created. Please wait a moment...", "info");
+        setIsSending(false);
+        return;
+      }
+      
+      setInput("");
+      
+      await sendMessage({ chatId, text: messageText });
+      
+      // Keep isSending true - will be reset when streaming starts or by timeout
     } catch (error) {
       console.error("Failed to send message:", error);
-      alert("Failed to send message. The repository might still be loading.");
+      
+      // Restore the message so user can retry
+      setInput(messageText);
+      
+      // Check if it's a daily limit error
+      if (error instanceof Error && error.message.includes("Daily message limit exceeded")) {
+        showToast(error.message, "error");
+        setShowApiKeyModal(true);
+      } else if (error instanceof Error && error.message.includes("Pro token allowance exceeded")) {
+        // Pro token cap reached - show a clear toast instead of a raw error
+        showToast(error.message, "error");
+      } else if (error instanceof Error && error.message.includes("Pro key is not configured")) {
+        showToast(
+          "Pro is enabled but the Pro API key is not configured. Please contact the owner or use your own key in Settings.",
+          "error",
+        );
+      } else if (error instanceof Error && error.message.includes("No API key configured")) {
+        // Misconfiguration / missing system key
+        showToast(
+          "No AI API key is configured for this app. Please contact the owner or add your own key in Settings.",
+          "error",
+        );
+      } else if (error instanceof Error && error.message.includes("Repository is still being created")) {
+        showToast("Repository is still being created. Please wait a moment and try again.", "info");
+      } else {
+        showToast("Failed to send message. Please try again.", "error");
+      }
+      
+      setIsSending(false);
     }
   };
 
@@ -326,7 +612,39 @@ export default function Home() {
           <div className="h-8 w-px bg-[#C4B599] dark:bg-gray-700"></div>
           
           <div className="flex items-center gap-3">
-            {apiKeyStatus && !apiKeyStatus.isAdmin && (
+            {/* Free user message counter */}
+            {remainingMessages?.isFreeUser && remainingMessages.remainingMessages !== null && (
+              <div className={`text-xs px-3 py-1 rounded font-bold ${
+                remainingMessages.remainingMessages === 0
+                  ? "bg-[#A85842] dark:bg-red-700 text-white"
+                  : remainingMessages.remainingMessages <= 2
+                  ? "bg-[#D4A574] dark:bg-yellow-600 text-white"
+                  : "bg-[#D4C5A9] dark:bg-gray-700 text-[#3D2817] dark:text-gray-300"
+              }`}>
+                {remainingMessages.remainingMessages}/{remainingMessages.totalDailyLimit} free messages
+              </div>
+            )}
+            {/* Tier indicator (details & actions live in Settings) */}
+            {billingStatus && (
+              <div className="flex items-center gap-2">
+                <div className="text-xs px-3 py-1 rounded font-bold bg-[#D4C5A9] dark:bg-gray-700 text-[#3D2817] dark:text-gray-300">
+                  {billingStatus.tier === "pro"
+                    ? "Pro tier"
+                    : billingStatus.tier === "byok"
+                    ? "BYOK tier"
+                    : billingStatus.tier === "admin"
+                    ? "Admin"
+                    : "Free tier"}
+                  {billingStatus.pro?.isActive &&
+                    typeof billingStatus.pro.remainingTokens === "number" && (
+                      <span className="ml-2 font-normal">
+                        · {Math.floor(billingStatus.pro.remainingTokens / 1_000_000)}M tokens left
+                      </span>
+                    )}
+                </div>
+              </div>
+            )}
+            {/* {apiKeyStatus && !apiKeyStatus.isAdmin && (
               <button
                 onClick={() => setShowApiKeyModal(true)}
                 className={`text-xs px-3 py-1 rounded font-bold ${
@@ -337,7 +655,13 @@ export default function Home() {
               >
                 {apiKeyStatus.hasKey ? "Update API Key" : "Add API Key"}
               </button>
-            )}
+            )} */}
+            <button
+              onClick={() => router.push("/settings")}
+              className="text-xs px-3 py-1 rounded font-bold bg-[#D4C5A9] dark:bg-gray-700 hover:bg-[#C4B599] dark:hover:bg-gray-600 text-[#3D2817] dark:text-gray-300"
+            >
+              Settings & Plans
+            </button>
             <UserButton />
           </div>
         </div>
@@ -450,7 +774,7 @@ export default function Home() {
           ) : (
             <div className="text-center text-[#5B4332] dark:text-gray-500 mt-8 text-sm">
               {chats.length === 0 
-                ? "Create your first 3D game project!"
+                ? "Start typing below to create your first 3D game!"
                 : "Select a project to continue"}
             </div>
           )}
@@ -465,19 +789,27 @@ export default function Home() {
               placeholder={
                 selectedChat?.repoId === "pending" 
                   ? "Setting up project..." 
-                  : isStreaming 
+                  : (isCurrentChatProcessing || isSending)
                   ? "Kayra is working..." 
                   : "Tell Kayra what game you want to create..."
               }
-              disabled={!selectedChatId || selectedChat?.repoId === "pending" || isStreaming}
+              disabled={selectedChat?.repoId === "pending" || isCurrentChatProcessing || isSending}
               className="flex-1 bg-[#F5EFE3] dark:bg-gray-800 border border-[#B5A58D] dark:border-gray-600 text-[#2D1B00] dark:text-white rounded p-2 text-sm focus:outline-none focus:border-[#5A8A5E] dark:focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed placeholder-[#8B7A65] dark:placeholder-gray-500"
             />
             <button
               type="submit"
-              disabled={!selectedChatId || selectedChat?.repoId === "pending" || isStreaming}
-              className="bg-[#5A8A5E] dark:bg-blue-500 hover:bg-[#4A7C4E] dark:hover:bg-blue-600 disabled:bg-[#C4B599] dark:disabled:bg-gray-700 disabled:cursor-not-allowed px-4 py-2 rounded font-bold text-sm text-white"
+              disabled={selectedChat?.repoId === "pending" || isCurrentChatProcessing || isSending}
+              className="bg-[#5A8A5E] dark:bg-blue-500 hover:bg-[#4A7C4E] dark:hover:bg-blue-600 disabled:bg-[#C4B599] dark:disabled:bg-gray-700 disabled:cursor-not-allowed px-4 py-2 rounded font-bold text-sm text-white min-w-[70px]"
             >
-              Send
+              {(isCurrentChatProcessing || isSending) ? (
+                <span className="dot-pulse">
+                  <span>.</span>
+                  <span>.</span>
+                  <span>.</span>
+                </span>
+              ) : (
+                "Send"
+              )}
             </button>
           </div>
         </form>
@@ -507,13 +839,72 @@ export default function Home() {
                   ? "Kayra is designing your game..."
                   : selectedChat?.repoId 
                   ? "Describe your game idea to get started"
-                  : "Create a chat to start building games"}
+                  : "Start typing to create your first game"}
               </div>
             </div>
           )}
         </div>
       </div>
       </div>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-fade-in">
+          <div className={`rounded-lg shadow-lg p-4 max-w-md border-2 ${
+            toast.type === "error" 
+              ? "bg-[#A85842] dark:bg-red-700 border-[#8B4332] dark:border-red-900 text-white"
+              : toast.type === "success"
+              ? "bg-[#5A8A5E] dark:bg-green-700 border-[#4A7C4E] dark:border-green-900 text-white"
+              : "bg-[#D4C5A9] dark:bg-gray-700 border-[#B5A58D] dark:border-gray-600 text-[#2D1B00] dark:text-white"
+          }`}>
+            <div className="flex items-start gap-3">
+              <div className="text-2xl flex-shrink-0">
+                {toast.type === "error" ? "❌" : toast.type === "success" ? "✅" : "ℹ️"}
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium">{toast.message}</p>
+              </div>
+              <button 
+                onClick={() => setToast(null)}
+                className="flex-shrink-0 hover:opacity-70 transition-opacity"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog */}
+      {confirmDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-[#F5EFE3] dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-2xl animate-fade-in">
+            <h3 className="text-lg font-bold mb-4 text-[#2D1B00] dark:text-white">
+              Confirm Action
+            </h3>
+            <p className="text-[#4A3425] dark:text-gray-300 mb-6">
+              {confirmDialog.message}
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setConfirmDialog(null)}
+                className="bg-[#D4C5A9] dark:bg-gray-700 hover:bg-[#C4B599] dark:hover:bg-gray-600 px-4 py-2 rounded text-[#2D1B00] dark:text-white font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  confirmDialog.onConfirm();
+                  setConfirmDialog(null);
+                }}
+                className="bg-[#A85842] dark:bg-red-700 hover:bg-[#8B4332] dark:hover:bg-red-900 px-4 py-2 rounded text-white font-bold transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
