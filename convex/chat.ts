@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { components } from "./_generated/api";
 import { saveMessage, listMessages, syncStreams, toUIMessages, vStreamArgs } from "@convex-dev/agent";
+import type { ContextHandler } from "@convex-dev/agent";
 import { paginationOptsValidator } from "convex/server";
 
 /**
@@ -436,6 +437,50 @@ export const processMessage = internalAction({
             // Create agent with user's API key
             const agent = createAgent(apiKey);
 
+            // Custom context handler to limit context window:
+            // - All messages until first commit (planning phase)
+            // - Plus current user message + last user message + last AI response
+            const contextHandler: ContextHandler = async (_ctx, handlerArgs) => {
+                const { recent, inputPrompt } = handlerArgs;
+                
+                // Find the index of the first commitAndPush tool call
+                let firstCommitIndex = -1;
+                for (let i = 0; i < recent.length; i++) {
+                    const msg = recent[i];
+                    if (msg.role === "assistant" && msg.content) {
+                        const contentStr = JSON.stringify(msg.content);
+                        if (contentStr.includes("commitAndPush")) {
+                            firstCommitIndex = i;
+                            break;
+                        }
+                    }
+                }
+                
+                // If no commit found yet, include all messages (planning phase)
+                if (firstCommitIndex === -1) {
+                    return [...recent, ...inputPrompt];
+                }
+                
+                // Include all messages up to and including the first commit response
+                // The first commit is typically in the assistant's response, so include that message
+                const planningPhase = recent.slice(0, firstCommitIndex + 1);
+                
+                // Get the last 2 messages (excluding the current prompt which is in inputPrompt):
+                // - Last AI response
+                // - Last user message  
+                const recentMessages = recent.slice(-2);
+                
+                // Deduplicate: don't include messages that are already in planning phase
+                const planningIds = new Set(planningPhase.map((m, i) => `${m.role}-${i}`));
+                const uniqueRecent = recentMessages.filter((m, i) => {
+                    const recentIdx = recent.length - 2 + i;
+                    return !planningIds.has(`${m.role}-${recentIdx}`);
+                });
+                
+                // Combine: planning phase + recent context + current prompt
+                return [...planningPhase, ...uniqueRecent, ...inputPrompt];
+            };
+
             // Use the agent's streamText WITH our custom Freestyle tools
             const result = await agent.streamText(
                 ctx,
@@ -450,6 +495,7 @@ export const processMessage = internalAction({
                         chunking: "word",
                         throttleMs: 100,
                     },
+                    contextHandler,
                 }
             );
 
