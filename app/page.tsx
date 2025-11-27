@@ -147,13 +147,13 @@ function MessageComponent({ message }: { message: UIMessage }) {
 
   return (
     <div 
-      className={`p-3 rounded-lg max-w-[90%] ${
+      className={`p-2 md:p-3 rounded-lg max-w-[95%] md:max-w-[90%] ${
         isUser
         ? "bg-[#5A8A5E] dark:bg-blue-600 self-end ml-auto"
         : "bg-[#D4C5A9] dark:bg-gray-700"
       }`}
     >
-      <div className={`text-xs mb-1 uppercase font-bold flex items-center gap-2 ${
+      <div className={`text-[10px] md:text-xs mb-1 uppercase font-bold flex items-center gap-1 md:gap-2 ${
         isUser ? "text-white dark:text-white" : "text-[#5B4332] dark:text-gray-300"
       }`}>
         <span>{isUser ? "You" : "Kayra"}</span>
@@ -663,24 +663,24 @@ export default function Home() {
   return (
     <main className="flex flex-col h-screen bg-[#E8DCC8] dark:bg-gray-900 text-[#4A3425] dark:text-white">
       {/* Top Bar with Brand, Chat Selector, Preview Title, and User */}
-      <div className="h-16 px-4 border-b border-[#B5A58D] dark:border-gray-700 flex items-center justify-between gap-4">
+      <div className="min-h-16 px-3 md:px-4 py-2 md:py-0 border-b border-[#B5A58D] dark:border-gray-700 flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4">
         {/* Left: Brand + Chat Controls */}
-        <div className="flex items-center gap-4 flex-1 min-w-0">
-          <div className="flex flex-col leading-tight">
-            <div className="flex items-center gap-2">
-              <div className="text-2xl font-bold bg-gradient-to-r from-[#2D1B00] via-[#5B4332] to-[#5A8A5E] dark:from-blue-400 dark:via-purple-400 dark:to-purple-500 bg-clip-text text-transparent">
+        <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
+          <div className="flex flex-col leading-tight flex-shrink-0">
+            <div className="flex items-center gap-1 md:gap-2">
+              <div className="text-xl md:text-2xl font-bold bg-gradient-to-r from-[#2D1B00] via-[#5B4332] to-[#5A8A5E] dark:from-blue-400 dark:via-purple-400 dark:to-purple-500 bg-clip-text text-transparent">
                 Kayra
               </div>
-              <div className="text-2xl opacity-90 dark:opacity-70">🌳</div>
+              <div className="text-xl md:text-2xl opacity-90 dark:opacity-70">🌳</div>
             </div>
-            <div className="text-xs text-[#5B4332] dark:text-gray-400 font-medium">the Game Creator</div>
+            <div className="text-[10px] md:text-xs text-[#5B4332] dark:text-gray-400 font-medium hidden sm:block">the Game Creator</div>
           </div>
           
-          <div className="flex items-center gap-2 flex-1 max-w-md">
+          <div className="flex items-center gap-1 md:gap-2 flex-1 min-w-0">
             <select
               value={selectedChatId || ""}
               onChange={(e) => setSelectedChatId(e.target.value as Id<"chats">)}
-              className="bg-[#F5EFE3] dark:bg-gray-800 border border-[#B5A58D] dark:border-gray-600 rounded px-3 py-2 text-sm text-[#2D1B00] dark:text-white focus:outline-none focus:border-[#5A8A5E] dark:focus:border-blue-500 flex-1 font-medium"
+              className="bg-[#F5EFE3] dark:bg-gray-800 border border-[#B5A58D] dark:border-gray-600 rounded px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm text-[#2D1B00] dark:text-white focus:outline-none focus:border-[#5A8A5E] dark:focus:border-blue-500 flex-1 min-w-0 font-medium truncate"
             >
               {chats.map((chat) => (
                 <option key={chat._id} value={chat._id}>
@@ -691,7 +691,7 @@ export default function Home() {
             {selectedChatId && (
               <button
                 onClick={() => handleDeleteChat(selectedChatId)}
-                className="bg-[#A85842] dark:bg-red-700 hover:bg-[#8B4332] dark:hover:bg-red-900 px-3 py-2 rounded text-sm text-white"
+                className="bg-[#A85842] dark:bg-red-700 hover:bg-[#8B4332] dark:hover:bg-red-900 px-2 md:px-3 py-1.5 md:py-2 rounded text-xs md:text-sm text-white flex-shrink-0"
                 title="Delete chat"
               >
                 🗑️
@@ -700,72 +700,61 @@ export default function Home() {
             <button
               onClick={handleCreateChat}
               disabled={isCreatingChat}
-              className="bg-[#5A8A5E] dark:bg-green-600 hover:bg-[#4A7C4E] dark:hover:bg-green-700 disabled:bg-[#C4B599] dark:disabled:bg-gray-700 disabled:cursor-not-allowed px-3 py-2 rounded text-sm font-bold whitespace-nowrap text-white"
+              className="bg-[#5A8A5E] dark:bg-green-600 hover:bg-[#4A7C4E] dark:hover:bg-green-700 disabled:bg-[#C4B599] dark:disabled:bg-gray-700 disabled:cursor-not-allowed px-2 md:px-3 py-1.5 md:py-2 rounded text-xs md:text-sm font-bold whitespace-nowrap text-white flex-shrink-0"
             >
               {isCreatingChat ? "..." : "+ New"}
             </button>
           </div>
         </div>
         
-        {/* Right: Preview Title + User Menu */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
+        {/* Right: User Menu (Preview Title hidden on mobile) */}
+        <div className="flex items-center gap-2 md:gap-4 justify-between md:justify-end">
+          <div className="hidden lg:flex items-center gap-2">
             <span className="text-lg font-bold text-[#2D1B00] dark:text-white">Live Preview</span>
             <span className="text-xl">🎮</span>
           </div>
           
-          <div className="h-8 w-px bg-[#C4B599] dark:bg-gray-700"></div>
+          <div className="hidden lg:block h-8 w-px bg-[#C4B599] dark:bg-gray-700"></div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 md:gap-3 flex-wrap">
             {/* Free user message counter */}
             {remainingMessages?.isFreeUser && remainingMessages.remainingMessages !== null && (
-              <div className={`text-xs px-3 py-1 rounded font-bold ${
+              <div className={`text-[10px] md:text-xs px-2 md:px-3 py-1 rounded font-bold ${
                 remainingMessages.remainingMessages === 0
                   ? "bg-[#A85842] dark:bg-red-700 text-white"
                   : remainingMessages.remainingMessages <= 2
                   ? "bg-[#D4A574] dark:bg-yellow-600 text-white"
                   : "bg-[#D4C5A9] dark:bg-gray-700 text-[#3D2817] dark:text-gray-300"
               }`}>
-                {remainingMessages.remainingMessages}/{remainingMessages.totalDailyLimit} free messages
+                {remainingMessages.remainingMessages}/{remainingMessages.totalDailyLimit} free
               </div>
             )}
             {/* Tier indicator (details & actions live in Settings) */}
             {billingStatus && (
-              <div className="flex items-center gap-2">
-                <div className="text-xs px-3 py-1 rounded font-bold bg-[#D4C5A9] dark:bg-gray-700 text-[#3D2817] dark:text-gray-300">
+              <div className="hidden sm:flex items-center gap-2">
+                <div className="text-[10px] md:text-xs px-2 md:px-3 py-1 rounded font-bold bg-[#D4C5A9] dark:bg-gray-700 text-[#3D2817] dark:text-gray-300">
                   {billingStatus.tier === "pro"
-                    ? "Pro tier"
+                    ? "Pro"
                     : billingStatus.tier === "byok"
-                    ? "BYOK tier"
+                    ? "BYOK"
                     : billingStatus.tier === "admin"
                     ? "Admin"
-                    : "Free tier"}
+                    : "Free"}
                   {billingStatus.pro?.isActive &&
                     typeof billingStatus.pro.remainingTokens === "number" && (
-                      <span className="ml-2 font-normal">
-                        · {Math.floor(billingStatus.pro.remainingTokens / 1_000_000)}M tokens left
+                      <span className="ml-1 md:ml-2 font-normal hidden md:inline">
+                        · {Math.floor(billingStatus.pro.remainingTokens / 1_000_000)}M left
                       </span>
                     )}
                 </div>
               </div>
             )}
-            {/* {apiKeyStatus && !apiKeyStatus.isAdmin && (
-              <button
-                onClick={() => setShowApiKeyModal(true)}
-                className={`text-xs px-3 py-1 rounded font-bold ${
-                  apiKeyStatus.hasKey
-                    ? "bg-[#D4C5A9] dark:bg-gray-700 hover:bg-[#C4B599] dark:hover:bg-gray-600 text-[#3D2817] dark:text-gray-300"
-                    : "bg-[#D4A574] dark:bg-yellow-600 hover:bg-[#C49564] dark:hover:bg-yellow-700 text-white"
-                }`}
-              >
-                {apiKeyStatus.hasKey ? "Update API Key" : "Add API Key"}
-              </button>
-            )} */}
             <button
               onClick={() => router.push("/settings")}
-              className="text-xs px-3 py-1 rounded font-bold bg-[#D4C5A9] dark:bg-gray-700 hover:bg-[#C4B599] dark:hover:bg-gray-600 text-[#3D2817] dark:text-gray-300"
+              className="text-[10px] md:text-xs px-2 md:px-3 py-1 rounded font-bold bg-[#D4C5A9] dark:bg-gray-700 hover:bg-[#C4B599] dark:hover:bg-gray-600 text-[#3D2817] dark:text-gray-300"
             >
-              Settings & Plans
+              <span className="hidden sm:inline">Settings</span>
+              <span className="sm:hidden">⚙️</span>
             </button>
             <UserButton />
           </div>
@@ -774,12 +763,12 @@ export default function Home() {
 
       {/* API Key Modal */}
       {showApiKeyModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-[#F5EFE3] dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-            <h2 className="text-xl font-bold mb-2 text-[#2D1B00] dark:text-white">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#F5EFE3] dark:bg-gray-800 rounded-lg p-4 md:p-6 max-w-md w-full">
+            <h2 className="text-lg md:text-xl font-bold mb-2 text-[#2D1B00] dark:text-white">
               {apiKeyStatus?.hasKey ? "Update" : "Add"} OpenAI API Key
             </h2>
-            <p className="text-sm text-[#4A3425] dark:text-gray-400 mb-4">
+            <p className="text-xs md:text-sm text-[#4A3425] dark:text-gray-400 mb-4">
               Your API key is used to power Kayra&apos;s AI. Get one at{" "}
               <a
                 href="https://platform.openai.com/api-keys"
@@ -847,12 +836,12 @@ export default function Home() {
       )}
 
       {/* Main Content Area */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Chat Panel - 50% */}
-        <div className="w-1/2 flex flex-col border-r border-[#B5A58D] dark:border-gray-700 overflow-hidden">
+      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+        {/* Chat Panel - full width on mobile, 50% on desktop */}
+        <div className="w-full md:w-1/2 h-1/2 md:h-full flex flex-col border-b md:border-b-0 md:border-r border-[#B5A58D] dark:border-gray-700 overflow-hidden">
 
         {/* Messages */}
-        <div className="flex-1 p-6 overflow-y-auto space-y-4 min-h-0">
+        <div className="flex-1 p-3 md:p-6 overflow-y-auto space-y-3 md:space-y-4 min-h-0">
           {selectedChat?.repoId === "pending" ? (
             <div className="text-center text-[#5A8A5E] dark:text-blue-500 mt-8 text-sm animate-pulse">
               <div className="text-2xl mb-2">⚙️</div>
@@ -867,11 +856,11 @@ export default function Home() {
                 <MessageComponent key={msg.id} message={msg} />
               ))
             ) : (
-              <div className="text-center text-[#5B4332] dark:text-gray-500 mt-8 text-sm">
-                <div className="text-3xl mb-3">👋</div>
-                <div className="text-lg font-bold text-[#2D1B00] dark:text-white mb-2">Hi! I&apos;m Kayra</div>
-                <div className="mb-4 text-[#4A3425] dark:text-gray-300">Tell me what kind of 3D game you want to create!</div>
-                <div className="mt-4 text-xs text-[#6B5844] dark:text-gray-600">
+              <div className="text-center text-[#5B4332] dark:text-gray-500 mt-4 md:mt-8 text-xs md:text-sm">
+                <div className="text-2xl md:text-3xl mb-2 md:mb-3">👋</div>
+                <div className="text-base md:text-lg font-bold text-[#2D1B00] dark:text-white mb-1 md:mb-2">Hi! I&apos;m Kayra</div>
+                <div className="mb-2 md:mb-4 text-[#4A3425] dark:text-gray-300 text-xs md:text-sm">Tell me what kind of 3D game you want to create!</div>
+                <div className="mt-2 md:mt-4 text-[10px] md:text-xs text-[#6B5844] dark:text-gray-600">
                   Try: &quot;Make a flappy bird game&quot; or &quot;Create a racing game&quot;
                 </div>
               </div>
@@ -886,25 +875,25 @@ export default function Home() {
         </div>
 
         {/* Input form */}
-        <form onSubmit={handleSend} className="p-6 border-t border-[#B5A58D] dark:border-gray-700">
+        <form onSubmit={handleSend} className="p-3 md:p-6 border-t border-[#B5A58D] dark:border-gray-700">
           <div className="flex gap-2">
             <input 
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={
                 selectedChat?.repoId === "pending" 
-                  ? "Setting up project..." 
+                  ? "Setting up..." 
                   : (isCurrentChatProcessing || isSending)
-                  ? "Kayra is working..." 
-                  : "Tell Kayra what game you want to create..."
+                  ? "Working..." 
+                  : "Describe your game..."
               }
               disabled={selectedChat?.repoId === "pending" || isCurrentChatProcessing || isSending}
-              className="flex-1 bg-[#F5EFE3] dark:bg-gray-800 border border-[#B5A58D] dark:border-gray-600 text-[#2D1B00] dark:text-white rounded p-2 text-sm focus:outline-none focus:border-[#5A8A5E] dark:focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed placeholder-[#8B7A65] dark:placeholder-gray-500"
+              className="flex-1 bg-[#F5EFE3] dark:bg-gray-800 border border-[#B5A58D] dark:border-gray-600 text-[#2D1B00] dark:text-white rounded p-2 text-xs md:text-sm focus:outline-none focus:border-[#5A8A5E] dark:focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed placeholder-[#8B7A65] dark:placeholder-gray-500"
             />
             <button
               type="submit"
               disabled={selectedChat?.repoId === "pending" || isCurrentChatProcessing || isSending}
-              className="bg-[#5A8A5E] dark:bg-blue-500 hover:bg-[#4A7C4E] dark:hover:bg-blue-600 disabled:bg-[#C4B599] dark:disabled:bg-gray-700 disabled:cursor-not-allowed px-4 py-2 rounded font-bold text-sm text-white min-w-[70px]"
+              className="bg-[#5A8A5E] dark:bg-blue-500 hover:bg-[#4A7C4E] dark:hover:bg-blue-600 disabled:bg-[#C4B599] dark:disabled:bg-gray-700 disabled:cursor-not-allowed px-3 md:px-4 py-2 rounded font-bold text-xs md:text-sm text-white min-w-[60px] md:min-w-[70px]"
             >
               {(isCurrentChatProcessing || isSending) ? (
                 <span className="dot-pulse">
@@ -920,9 +909,9 @@ export default function Home() {
         </form>
       </div>
 
-      {/* Preview Panel - 50% */}
-      <div className="w-1/2 flex flex-col overflow-hidden">
-        <div className="flex-1 bg-[#D4C5A9] dark:bg-gray-950 p-6 flex items-center justify-center">
+      {/* Preview Panel - full width on mobile, 50% on desktop */}
+      <div className="w-full md:w-1/2 h-1/2 md:h-full flex flex-col overflow-hidden">
+        <div className="flex-1 bg-[#D4C5A9] dark:bg-gray-950 p-3 md:p-6 flex items-center justify-center">
           {selectedChat?.repoId === "pending" ? (
             <div className="text-[#5A8A5E] dark:text-blue-500 text-center animate-pulse">
               <div className="text-4xl mb-4">⚙️</div>
@@ -954,20 +943,20 @@ export default function Home() {
 
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 animate-fade-in">
-          <div className={`rounded-lg shadow-lg p-4 max-w-md border-2 ${
+        <div className="fixed bottom-4 left-4 right-4 md:bottom-6 md:right-6 md:left-auto z-50 animate-fade-in">
+          <div className={`rounded-lg shadow-lg p-3 md:p-4 max-w-md mx-auto md:mx-0 border-2 ${
             toast.type === "error" 
               ? "bg-[#A85842] dark:bg-red-700 border-[#8B4332] dark:border-red-900 text-white"
               : toast.type === "success"
               ? "bg-[#5A8A5E] dark:bg-green-700 border-[#4A7C4E] dark:border-green-900 text-white"
               : "bg-[#D4C5A9] dark:bg-gray-700 border-[#B5A58D] dark:border-gray-600 text-[#2D1B00] dark:text-white"
           }`}>
-            <div className="flex items-start gap-3">
-              <div className="text-2xl flex-shrink-0">
+            <div className="flex items-start gap-2 md:gap-3">
+              <div className="text-xl md:text-2xl flex-shrink-0">
                 {toast.type === "error" ? "❌" : toast.type === "success" ? "✅" : "ℹ️"}
               </div>
               <div className="flex-1">
-                <p className="text-sm font-medium">{toast.message}</p>
+                <p className="text-xs md:text-sm font-medium">{toast.message}</p>
               </div>
               <button 
                 onClick={() => setToast(null)}
@@ -982,15 +971,15 @@ export default function Home() {
 
       {/* Confirmation Dialog */}
       {confirmDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-[#F5EFE3] dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-2xl animate-fade-in">
-            <h3 className="text-lg font-bold mb-4 text-[#2D1B00] dark:text-white">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#F5EFE3] dark:bg-gray-800 rounded-lg p-4 md:p-6 max-w-md w-full shadow-2xl animate-fade-in">
+            <h3 className="text-base md:text-lg font-bold mb-3 md:mb-4 text-[#2D1B00] dark:text-white">
               Confirm Action
             </h3>
-            <p className="text-[#4A3425] dark:text-gray-300 mb-6">
+            <p className="text-sm md:text-base text-[#4A3425] dark:text-gray-300 mb-4 md:mb-6">
               {confirmDialog.message}
             </p>
-            <div className="flex gap-3 justify-end">
+            <div className="flex gap-2 md:gap-3 justify-end">
               <button
                 onClick={() => setConfirmDialog(null)}
                 className="bg-[#D4C5A9] dark:bg-gray-700 hover:bg-[#C4B599] dark:hover:bg-gray-600 px-4 py-2 rounded text-[#2D1B00] dark:text-white font-medium transition-colors"
