@@ -6,14 +6,11 @@ import { useSmoothText, type UIMessage } from "@convex-dev/agent/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import { FreestyleDevServer } from "freestyle-sandboxes/react/dev-server";
-import { requestDevServer } from "../lib/freestyle-actions";
+import { requestDevServer, downloadRepoAsZip } from "../lib/freestyle-actions";
 import ReactMarkdown from "react-markdown";
 import { UserButton, SignInButton, useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 
-/**
- * Landing page component shown to non-authenticated users
- */
 function LandingPage() {
   return (
     <main className="h-screen flex flex-col bg-gradient-to-br from-[#E8DCC8] via-[#F5EFE3] to-[#D4C5A9] dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-auto">
@@ -127,7 +124,8 @@ function MessageComponent({ message }: { message: UIMessage }) {
   const isUser = message.role === "user";
   const isStreaming = message.status === "streaming";
   const usage = (message.metadata as { usage?: { totalTokens?: number } } | undefined)?.usage;
-  const totalTokens = !isUser ? usage?.totalTokens : undefined;
+  // Only show tokens when message is complete (not streaming)
+  const totalTokens = !isUser && !isStreaming ? usage?.totalTokens : undefined;
 
   // Extract tool calls from message parts
   type MessagePart = { type?: string; output?: string | object; [key: string]: unknown };
@@ -318,6 +316,7 @@ export default function Home() {
     onConfirm: () => void;
   } | null>(null);
   const [mobileView, setMobileView] = useState<"chat" | "preview">("chat");
+  const [isDownloading, setIsDownloading] = useState(false);
   
   const chats = useQuery(api.chat.listChats) || [];
   const apiKeyStatus = useQuery(api.users.getApiKey);
@@ -369,6 +368,19 @@ export default function Home() {
       return toolName.includes('commitAndPush');
     })
   );
+  
+  // Count total commits to use as a key for refreshing the preview
+  // When this changes, the FreestyleDevServer component will remount and refresh
+  const commitCount = messages.reduce((count, msg) => {
+    const parts = msg.parts as MessagePart[] | undefined;
+    if (!parts) return count;
+    const commits = parts.filter((part) => {
+      if (!part.type?.startsWith('tool-')) return false;
+      const toolName = part.type.replace('tool-', '');
+      return toolName.includes('commitAndPush');
+    });
+    return count + commits.length;
+  }, 0);
   
   const sendMessage = useMutation(api.chat.sendMessage);
   const createChat = useMutation(api.chat.createChat);
@@ -575,6 +587,54 @@ export default function Home() {
   };
 
   /**
+   * Downloads the current game project as a zip file.
+   */
+  const handleDownloadProject = async () => {
+    if (!selectedChat?.repoId || selectedChat.repoId === "pending") {
+      showToast("Project is not ready yet", "error");
+      return;
+    }
+
+    setIsDownloading(true);
+    try {
+      const result = await downloadRepoAsZip({ repoId: selectedChat.repoId });
+      
+      if (result.success && result.data) {
+        // Convert base64 to blob and trigger download
+        // Clean the base64 string (remove any whitespace)
+        const cleanBase64 = result.data.replace(/[\s\r\n]+/g, '');
+        
+        // Decode base64 to binary
+        const binaryString = atob(cleanBase64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: 'application/gzip' });
+        
+        // Create download link
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = result.filename || 'game-project.zip';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showToast("Project downloaded successfully!", "success");
+      } else {
+        showToast(result.error || "Failed to download project", "error");
+      }
+    } catch (error) {
+      console.error("Failed to download project:", error);
+      showToast("Failed to download project", "error");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  /**
    * Handles message submission: validates input, clears the input field,
    * and sends the message to the selected chat.
    * If no chat exists, automatically creates one first.
@@ -696,6 +756,16 @@ export default function Home() {
                 title="Delete chat"
               >
                 🗑️
+              </button>
+            )}
+            {selectedChat?.repoId && selectedChat.repoId !== "pending" && hasCommitted && (
+              <button
+                onClick={handleDownloadProject}
+                disabled={isDownloading}
+                className="bg-[#6B8E8B] dark:bg-teal-700 hover:bg-[#5A7D7A] dark:hover:bg-teal-800 disabled:bg-[#C4B599] dark:disabled:bg-gray-700 disabled:cursor-not-allowed px-2 md:px-3 py-1.5 md:py-2 rounded text-xs md:text-sm text-white flex-shrink-0"
+                title="Download project as zip"
+              >
+                {isDownloading ? "..." : "⬇️"}
               </button>
             )}
             <button
@@ -950,6 +1020,7 @@ export default function Home() {
           ) : selectedChat?.repoId && hasCommitted ? (
             <div className="w-full h-full rounded-lg overflow-hidden border-2 border-[#8B7A65] dark:border-gray-700 shadow-2xl">
               <FreestyleDevServer 
+                key={`${selectedChat.repoId}-${commitCount}`}
                 actions={{ requestDevServer }} 
                 repoId={selectedChat.repoId} 
               />

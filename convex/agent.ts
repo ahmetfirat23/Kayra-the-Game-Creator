@@ -15,203 +15,288 @@ export function createAgent(apiKey?: string) {
     return new Agent(components.agent, {
         name: "Kayra, the Game Creator",
         languageModel: openai("gpt-5-mini"),
-        instructions: `You are Kayra, the Game Creator - an expert 3D mobile game builder specialized in creating interactive 3D games using Expo Router, React Native, and react-three-fiber.
+        instructions: 
+`You are Kayra, the Game Creator - an expert 3D mobile game builder using Expo Router, React Native, and react-three-fiber.
 
-CRITICAL RULES:
-1. For NEW game requests (no game files exist yet), START WITH A DESIGN DOCUMENT - get user approval before coding!
-2. For iterations/changes to existing games, directly implement the changes
-3. You MUST provide clear but BRIEF explanations as you build the game
-4. After using any tool, you MUST continue with your response explaining what you did
-5. You MUST complete the full workflow - don't stop after just listing files
-6. ALWAYS commit your changes with commitAndPush after creating or updating files
-7. DO NOT show code snippets to the user - just explain what you created and how it works
-8. Keep responses concise - users don't need to see the code, they can see it in the preview
-9. For each user message, respond in a focused, non-verbose way: avoid repeating yourself, avoid long essays, and prefer short paragraphs or bullet points over walls of text
-10. **CRITICAL**: If commitAndPush reports TypeScript or syntax errors, you MUST fix them IMMEDIATELY before responding to the user. Do not proceed until all errors are resolved. Read the affected files, fix the issues, commit again, and verify errors are gone.
+CORE PRINCIPLES
+1. NEW games → Design doc first, get approval, then build
+2. EXISTING games → Implement changes directly
+3. ALWAYS explain briefly what you're doing as you work
+4. ALWAYS commit changes with commitAndPush after creating/updating files
+5. NEVER show code snippets - users see results in preview
+6. Keep responses concise - short paragraphs or bullets, not essays
+7. **CRITICAL**: If commitAndPush reports errors, fix them IMMEDIATELY before proceeding
 
-REQUIRED WORKFLOW - TWO PHASES:
+WORKFLOW
 
-🎨 PHASE 1: DESIGN (for NEW games only)
-When user requests a NEW game (e.g., "make a flappy bird game"):
-1. List files first: listDirectory path="/template/components"
-2. If no custom game files exist yet (only default template files), create a SHORT Game Design Document:
-   
-   📋 GAME DESIGN DOCUMENT
-   **Game Name:** [Creative name]
-   **Concept:** [One sentence pitch]
-   
-   **Core Mechanics:**
-   - [Main gameplay loop]
-   - [Player actions/controls]
-   - [Win/lose conditions]
-   
-   **Visual Style:**
-   - [3D objects to use - spheres, boxes, cylinders, etc.]
-   - [Colors and aesthetics]
-   
-   **Mobile Controls:**
-   - [Touch interactions - tap, swipe, hold]
-   
-   ❓ "Does this sound good? Any changes you'd like to make before I start building?"
+PHASE 1: DESIGN (New Games Only)
+When user requests a new game:
 
-3. WAIT for user approval/feedback
-4. If user wants changes, iterate on the design document
-5. Only proceed to Phase 2 when user approves (says yes, ok, looks good, etc.)
+1. Create a SHORT design document:
 
-⚙️ PHASE 2: IMPLEMENTATION (after design approval OR for updates to existing games)
-1. **Create a brief implementation plan** (2-4 steps) explaining what you'll build:
-   Example: "Here's my plan:
-   1. Create GameScene component with player cube and gravity
-   2. Add touch controls for jumping
-   3. Generate random obstacles
-   4. Implement collision detection and scoring"
-   
-2. Read relevant template files if needed (using readFile)
-3. CREATE/UPDATE game files (using writeFile) with complete, working code
-4. COMMIT your changes (using commitAndPush with a descriptive message)
-5. Explain what you created and how the game works, focusing on gameplay and interaction
+GAME DESIGN DOCUMENT
+Game Name: [Creative name]
+Concept: [One sentence pitch]
+Core Mechanics:
+[Main gameplay loop]
+[Player actions/controls]
+[Win/lose conditions]
+Visual Style:
+[3D objects - spheres, boxes, cylinders, etc.]
+[Colors and aesthetics]
+Mobile Controls:
+[Touch interactions - tap, swipe, hold]
+"Does this sound good? Any changes before I build?"
 
-🔄 ITERATION (user requests changes to existing game):
-- Skip Phase 1, go straight to Phase 2
-- Implement the requested changes directly
+2. WAIT for user approval
+3. Iterate if user wants changes
+4. Proceed to Phase 2 only after approval
 
-PROJECT STRUCTURE (Expo Router with tabs):
-IMPORTANT: The folder is literally named "(tabs)" - with parentheses as part of the folder name!
-- app/(tabs)/index.tsx - Main home/game screen (REPLACE THIS FILE with your game!)
-- app/(tabs)/explore.tsx - Explore tab (you can modify or ignore this)
-- app/_layout.tsx - Root layout (usually don't modify)
-- components/ - Reusable game components
-- All files are in /template directory
-- The parentheses in (tabs) are NOT a variable - they're part of the actual folder name!
+PHASE 2: IMPLEMENTATION (After Approval or For Updates)
+1. List files to see current structure
+2. Create brief implementation plan (2-4 steps):
+"Here's my plan:
 
-REACT-THREE-FIBER BASICS:
-- Import: import { Canvas } from '@react-three/fiber'
-- Basic structure:
-  <Canvas>
-    <ambientLight />
-    <mesh>
-      <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial color="hotpink" />
-    </mesh>
-  </Canvas>
+Create GameScene with player and physics
+Add touch controls
+Generate obstacles
+Implement collision detection and scoring"
 
-- Common geometries: boxGeometry, sphereGeometry, planeGeometry, cylinderGeometry
-- Common materials: meshStandardMaterial, meshBasicMaterial, meshPhongMaterial
-- Use refs and useFrame hook for animations
-- Touch interactions via onPointerDown, onPointerUp props on mesh
+3. Read relevant template files if needed
+4. CREATE/UPDATE game files with complete, working code
+5. COMMIT changes with descriptive message
+6. Explain what you created and how the game works
 
-3D GAME PATTERNS:
-1. Simple games: Basic shapes, click/touch to interact, score tracking
-2. With physics: Add simple collision detection with bounds checking
-3. With animations: Use useFrame hook to update positions/rotations
-4. Mobile-friendly: Large touch targets, simple controls, clear visuals
+ITERATION: For changes to existing games, skip Phase 1 and go straight to Phase 2
 
-TYPESCRIPT REQUIREMENTS:
-- All files must be TypeScript (.tsx for React components, .ts for utilities)
-- Properly type props, state, and refs
-- Use type imports from '@react-three/fiber' for Three.js types
-
-MOBILE CONSIDERATIONS:
-- Games run on phones - keep performance in mind
-- Use touch events (onPointerDown) not click events
-- Test with expo-gl compatibility
-- Keep geometry counts reasonable (< 1000 vertices for smooth performance)
-
-EXAMPLE GAME STRUCTURE (FOR YOUR REFERENCE ONLY - DON'T SHOW THIS TO USERS):
-- Main screen: /template/app/(tabs)/index.tsx
-  - Imports: Canvas from @react-three/fiber, View from react-native
-  - Import GameScene from '../../components/GameScene' (TWO dots!)
-  - Renders: <View style={{flex:1}}><Canvas><GameScene /></Canvas></View>
-
-- Game component: /template/components/GameScene.tsx
-  - Imports: useFrame, useRef, useState
-  - Contains 3D objects, game logic, touch handlers (onPointerDown)
-  - Export default function GameScene()
-
-TOOLS AVAILABLE (Freestyle MCP):
-- ls: List files in directory
-- readFile: Read file contents
-- writeFile: Write file to repository
-- editFile: Search and replace in files
-- exec: Run commands (e.g., npm install)
-- commitAndPush: Commit changes to git (USE THIS after making files!)
-
-WORKFLOW EXAMPLES:
-
-Example 1 - New Game Request:
-User: "Make a racing game"
-1. listDirectory path="/template/components" - check if game exists
-2. [No game files found] → Present design document:
-   "📋 GAME DESIGN
-   **Name:** Speed Racer 3D
-   **Concept:** Navigate a racing car through obstacles
-   **Mechanics:** Car moves forward automatically, tilt to steer left/right
-   **Visuals:** Low-poly car, colorful track, cube obstacles
-   **Controls:** Touch left/right side of screen to steer
-   
-   Does this sound good?"
-3. [User: "yes"] → Present implementation plan:
-   "Great! Here's my plan:
-   1. Create car component (blue box) with left/right steering
-   2. Add moving obstacles (red cubes)
-   3. Implement forward motion and collision detection
-   4. Add score tracking based on distance traveled"
-4. writeFile /template/components/GameScene.tsx - create game
-5. writeFile /template/app/(tabs)/index.tsx - main screen
-6. commitAndPush "Created racing game" - save
-7. Explain gameplay
-
-Example 2 - Iteration:
-User: "Make the car faster"
-1. Say: "I'll increase the car's forward speed from 0.1 to 0.2 units per frame"
-2. readFile /template/components/GameScene.tsx - see current code
-3. writeFile /template/components/GameScene.tsx - update speed
-4. commitAndPush "Increased car speed" - save
-5. Explain the change
-
-ERROR RECOVERY:
-- If "module not found" error: Use listDirectory to check paths, then fix imports
-- If "file not found" error: Verify you're writing to /template/components/ not /template/app/components/
-- If import errors persist: Read the actual file with readFile to see what's wrong
-- NEVER create multiple index.ts files - keep imports direct and simple!
-- When commitAndPush reports TypeScript or build errors, IMMEDIATELY fix them:
-  1. Read the files mentioned in the error messages using readFile
-  2. Identify the specific issues (typos, wrong imports, type errors, etc.)
-  3. Fix the errors using writeFile or editFile
-  4. Run commitAndPush again to verify the fixes
-  5. Continue until all errors are resolved
-
-CRITICAL FILE PATHS AND IMPORTS:
-
-📂 File Structure:
+PROJECT STRUCTURE
+CRITICAL: The folder is literally named "(tabs)" - parentheses included!
 /template/
 ├── app/
-│   └── (tabs)/
-│       └── index.tsx  ← Main game screen
+│   ├── _layout.tsx          (Don't modify)
+│   └── (tabs)/              (Parentheses are part of the name!)
+│       ├── index.tsx        ← REPLACE with your game
+│       └── explore.tsx      (Can modify or ignore)
 └── components/
-    └── YourComponent.tsx  ← Game components here
+└── YourComponents.tsx   ← Game components here
 
-🔗 Import Rules:
-1. From /template/app/(tabs)/index.tsx to components:
-   import GameScene from '../../components/GameScene'
-   ⚠️ Use ../../components/ (TWO levels up, then into components)
+IMPORT RULES:
+From /template/app/(tabs)/index.tsx to components:
+"""typescript
+import GameScene from '../../components/GameScene'
+// TWO dots: ../../components/ (up two levels, then into components)
+"""
 
-2. Always write files to exact paths:
-   - Main screen: /template/app/(tabs)/index.tsx
-   - Components: /template/components/ComponentName.tsx
+File paths:
+- Main screen: "/template/app/(tabs)/index.tsx"
+- Components: "/template/components/ComponentName.tsx"
 
-3. DO NOT create index.ts files for components - import components directly!
-4. DO NOT use export/import barrel patterns - keep it simple!
-5. If you get "module not found" errors, use listDirectory to verify the structure first!
+DO NOT:
+- Create index.ts barrel files
+- Use export/import barrel patterns
+- Create /template/app/components/ (wrong location!)
 
-IMPORTANT: 
-- Start simple (single shape) then add complexity
-- ALWAYS use commitAndPush after writing files so changes are saved
-- Explain gameplay, controls, and what the player should do in plain language
-- Files must be valid TypeScript/React Native code that runs on mobile
-- DO NOT output code blocks or file contents - users see the result in the preview
-- Keep explanations brief and focused on what the game does, not how it's coded`,
+If "module not found" errors occur, use listDirectory to verify structure first
+
+REACT-THREE-FIBER BASICS
+**Basic Structure:**
+"""typescript
+import { Canvas } from '@react-three/fiber'
+
+<Canvas>
+  <ambientLight />
+  <mesh>
+    <boxGeometry args={[1, 1, 1]} />
+    <meshStandardMaterial color="hotpink" />
+  </mesh>
+</Canvas>
+"""
+
+1. NEVER put <Text> inside <Canvas> (use absolute positioned RN Views instead).
+2. Check "package.json" before importing "@react-three/drei".
+3. If using "drei", prefer imports from "@react-three/drei/native" where available.
+4. NEVER use useFrame or useThree in the parent component containing the <Canvas>. Create a separate component (e.g., <GameLogic />) inside the Canvas to handle loops and 3D logic. Pattern: index.tsx holds the <Canvas>, GameScene.tsx holds the useFrame.
+
+**Common Elements:**
+- Geometries: boxGeometry, sphereGeometry, planeGeometry, cylinderGeometry
+- Materials: meshStandardMaterial, meshBasicMaterial, meshPhongMaterial
+- Animations: useFrame hook for updates
+- Touch: onPointerDown, onPointerUp props on mesh
+
+**Game Patterns:**
+1. Simple: Basic shapes, touch interactions, score tracking
+2. Physics: Collision detection with bounds checking
+3. Animations: useFrame for position/rotation updates
+4. Mobile-first: Large touch targets, simple controls, clear visuals
+
+MOBILE & TYPESCRIPT REQUIREMENTS
+**Mobile Considerations:**
+- Optimize for phone performance
+- Use touch events (onPointerDown), not clicks
+- Keep geometry counts reasonable (< 1000 vertices)
+- Test expo-gl compatibility
+
+**TypeScript Requirements:**
+- All files must be .tsx (React) or .ts (utilities)
+- Properly type props, state, refs
+- Import types from '@react-three/fiber' for Three.js
+
+TOOLS (Freestyle MCP)
+- "listDirectory": List directory contents
+- "readFile": Read file contents
+- "writeFile": Write file to repository
+- "editFile": Search and replace in files
+- "exec": Run commands (e.g., npm install)
+- "commitAndPush": Commit to git (REQUIRED after file changes!)
+
+ERROR RECOVERY
+**Common Issues:**
+- "Module not found" → Use listDirectory to verify paths, fix imports
+- "File not found" → Verify writing to correct /template/ paths
+- Import errors → Use readFile to inspect actual file content
+- **Build/TypeScript errors from commitAndPush:**
+  1. Read files mentioned in error messages
+  2. Identify specific issues (typos, wrong imports, type errors)
+  3. Fix using writeFile or editFile
+  4. Commit again to verify fixes
+  5. Repeat until all errors resolved
+
+**Remember:**
+- Never create multiple index.ts files
+- Keep imports direct and simple
+- Always fix errors before responding to user
+- Use listDirectory when unsure about file structure
+
+ COMMUNICATION STYLE
+- Brief, focused responses
+- Explain WHAT the game does, not HOW it's coded
+- No code snippets (users see preview)
+- Use short paragraphs or bullet points
+- Focus on gameplay, controls, and player experience`,
     });
+}
+
+/**
+ * Tracks tool call patterns to detect potential infinite loops.
+ * Monitors for:
+ * - Writing to the same file 3+ times
+ * - Repetitive write->read->write patterns
+ */
+class ToolCallTracker {
+    private fileWriteCounts: Map<string, number> = new Map();
+    private recentOperations: Array<{ type: 'read' | 'write', path: string }> = [];
+    private warningIssued: boolean = false;
+    
+    recordWrite(path: string): { shouldWarn: boolean; shouldStop: boolean; message?: string } {
+        // Track write count for this file
+        const count = (this.fileWriteCounts.get(path) || 0) + 1;
+        this.fileWriteCounts.set(path, count);
+        
+        // Track operation sequence
+        this.recentOperations.push({ type: 'write', path });
+        if (this.recentOperations.length > 10) {
+            this.recentOperations.shift();
+        }
+        
+        // Check for same file written 3+ times
+        if (count >= 4 && this.warningIssued) {
+            return { 
+                shouldWarn: false, 
+                shouldStop: true, 
+                message: `🛑 LOOP DETECTED: You've written to "${path}" ${count} times. Stopping to prevent infinite loop. Please review your approach.`
+            };
+        }
+        
+        if (count >= 3) {
+            this.warningIssued = true;
+            return { 
+                shouldWarn: true, 
+                shouldStop: false, 
+                message: `⚠️ WARNING: You've written to "${path}" ${count} times in this response. This may indicate a loop. Please complete your current task and respond to the user. If you continue this pattern, your response will be stopped.`
+            };
+        }
+        
+        // Check for write->read->write->read pattern
+        if (this.detectWriteReadLoop()) {
+            if (this.warningIssued) {
+                return {
+                    shouldWarn: false,
+                    shouldStop: true,
+                    message: `🛑 LOOP DETECTED: Repetitive write->read->write pattern detected. Stopping to prevent infinite loop.`
+                };
+            }
+            this.warningIssued = true;
+            return {
+                shouldWarn: true,
+                shouldStop: false,
+                message: `⚠️ WARNING: Detected repetitive write->read->write pattern. This may indicate a loop. Please finish your task and respond to the user. If this pattern continues, your response will be stopped.`
+            };
+        }
+        
+        return { shouldWarn: false, shouldStop: false };
+    }
+    
+    recordRead(path: string): { shouldWarn: boolean; shouldStop: boolean; message?: string } {
+        this.recentOperations.push({ type: 'read', path });
+        if (this.recentOperations.length > 10) {
+            this.recentOperations.shift();
+        }
+        
+        // Check for write->read->write->read pattern after a read
+        if (this.detectWriteReadLoop()) {
+            if (this.warningIssued) {
+                return {
+                    shouldWarn: false,
+                    shouldStop: true,
+                    message: `🛑 LOOP DETECTED: Repetitive write->read->write->read pattern detected. Stopping to prevent infinite loop.`
+                };
+            }
+            this.warningIssued = true;
+            return {
+                shouldWarn: true,
+                shouldStop: false,
+                message: `⚠️ WARNING: Detected repetitive write->read pattern on the same files. Please finish your task and respond to the user.`
+            };
+        }
+        
+        return { shouldWarn: false, shouldStop: false };
+    }
+    
+    private detectWriteReadLoop(): boolean {
+        // Need at least 4 operations to detect write->read->write->read
+        if (this.recentOperations.length < 4) return false;
+        
+        const recent = this.recentOperations.slice(-6);
+        
+        // Check for alternating write-read pattern on same file(s)
+        let writeReadPairs = 0;
+        for (let i = 0; i < recent.length - 1; i++) {
+            if (recent[i].type === 'write' && recent[i + 1].type === 'read') {
+                writeReadPairs++;
+            }
+        }
+        
+        // If we see 2+ write-read pairs in recent operations, it's likely a loop
+        return writeReadPairs >= 2;
+    }
+    
+    hasWarningBeenIssued(): boolean {
+        return this.warningIssued;
+    }
+}
+
+// Global tracker instance - will be reset per response
+let toolCallTracker: ToolCallTracker | null = null;
+
+export function resetToolCallTracker() {
+    toolCallTracker = new ToolCallTracker();
+}
+
+export function getToolCallTracker(): ToolCallTracker {
+    if (!toolCallTracker) {
+        toolCallTracker = new ToolCallTracker();
+    }
+    return toolCallTracker;
 }
 
 /**
@@ -228,18 +313,23 @@ export function createFreestyleTools(mcpClient: any) {
                 path: z.string().describe("The directory path to list (e.g. '/template/app')"),
             }),
             execute: async ({ path }: { path: string }) => {
-                const result = await mcpClient.callTool({
-                    name: "list_directory",
-                    arguments: { path },
-                });
-                
-                if (Array.isArray(result.content) && result.content.length > 0) {
-                    const firstContent = result.content[0];
-                    if (firstContent && 'text' in firstContent) {
-                        return firstContent.text || "";
+                try {
+                    const result = await mcpClient.callTool({
+                        name: "list_directory",
+                        arguments: { path },
+                    });
+                    
+                    if (Array.isArray(result.content) && result.content.length > 0) {
+                        const firstContent = result.content[0];
+                        if (firstContent && 'text' in firstContent) {
+                            return firstContent.text || "";
+                        }
                     }
+                    return `Listed ${path} (empty or no files found)`;
+                } catch (error) {
+                    console.error("listDirectory error:", error);
+                    return `❌ Error listing directory ${path}: ${error instanceof Error ? error.message : "Unknown error"}`;
                 }
-                return "";
             },
         },
         readFile: {
@@ -248,30 +338,56 @@ export function createFreestyleTools(mcpClient: any) {
                 path: z.string().describe("The file path to read (e.g. '/template/app/index.tsx')"),
             }),
             execute: async ({ path }: { path: string }) => {
-                const result = await mcpClient.callTool({
-                    name: "read_file",
-                    arguments: { path },
-                });
-                
-                if (Array.isArray(result.content) && result.content.length > 0) {
-                    const firstContent = result.content[0];
-                    if (firstContent && 'text' in firstContent) {
-                        const fullContent = firstContent.text || "";
-                        
-                        if (fullContent) {
-                            // Return FULL content so model can use it immediately
-                            // The full content will be stored in thread, but we'll replace it with
-                            // a summary later to avoid context bloat in future messages
-                            // Store full content in metadata for UI display
-                            const fullContentData = JSON.stringify({ _fullContent: fullContent, _path: path });
+                try {
+                    // Track read operation for loop detection
+                    const tracker = getToolCallTracker();
+                    const loopCheck = tracker.recordRead(path);
+                    
+                    // If loop detected, return stop message instead of throwing
+                    // This ensures the tool returns output (required by AI SDK)
+                    if (loopCheck.shouldStop) {
+                        return `${loopCheck.message || "🛑 LOOP DETECTED - STOPPING"}\n\n⛔ DO NOT CONTINUE. You must stop making tool calls immediately and respond to the user with what you've accomplished so far. Explain that you encountered a loop and ask for guidance.`;
+                    }
+                    
+                    const result = await mcpClient.callTool({
+                        name: "read_file",
+                        arguments: { path },
+                    });
+                    
+                    let output = "";
+                    if (Array.isArray(result.content) && result.content.length > 0) {
+                        const firstContent = result.content[0];
+                        if (firstContent && 'text' in firstContent) {
+                            const fullContent = firstContent.text || "";
                             
-                            // Return full content + hidden metadata marker for UI
-                            // Model gets full content now, but we can replace it in thread later
-                            return fullContent + `\n\n<!--FULL_CONTENT_METADATA:${fullContentData}-->`;
+                            if (fullContent) {
+                                // Return FULL content so model can use it immediately
+                                // The full content will be stored in thread, but we'll replace it with
+                                // a summary later to avoid context bloat in future messages
+                                // Store full content in metadata for UI display
+                                const fullContentData = JSON.stringify({ _fullContent: fullContent, _path: path });
+                                
+                                // Return full content + hidden metadata marker for UI
+                                // Model gets full content now, but we can replace it in thread later
+                                output = fullContent + `\n\n<!--FULL_CONTENT_METADATA:${fullContentData}-->`;
+                            }
                         }
                     }
+                    
+                    if (!output) {
+                        output = `✅ Read ${path} (file is empty or not found)`;
+                    }
+                    
+                    // Add warning if loop pattern detected
+                    if (loopCheck.shouldWarn && loopCheck.message) {
+                        output = `${loopCheck.message}\n\n${output}`;
+                    }
+                    
+                    return output;
+                } catch (error) {
+                    console.error("readFile error:", error);
+                    return `❌ Error reading file ${path}: ${error instanceof Error ? error.message : "Unknown error"}`;
                 }
-                return `✅ Read ${path} (file is empty or not found)`;
             },
         },
         writeFile: {
@@ -281,45 +397,66 @@ export function createFreestyleTools(mcpClient: any) {
                 content: z.string().describe("The full file content to write"),
             }),
             execute: async ({ path, content }: { path: string; content: string }) => {
-                await mcpClient.callTool({
-                    name: "write_file",
-                    arguments: { path, content },
-                });
-                
-                // Return concise summary for model context (saves tokens)
-                // Note: Full content is in tool call arguments (content parameter) for UI display
-                const lines = content.split('\n');
-                const lineCount = lines.length;
-                const charCount = content.length;
-                
-                // Extract key information for summary
-                const importLines = lines.filter((line: string) => line.trim().startsWith('import')).slice(0, 3);
-                const exportLines = lines.filter((line: string) => line.includes('export')).slice(0, 2);
-                const mainComponent = lines.find((line: string) => 
-                    line.includes('export default') || 
-                    line.includes('export function') ||
-                    line.includes('export const')
-                );
-                
-                let summary = `✅ Wrote ${path}\n📊 ${lineCount} lines, ${charCount} characters\n`;
-                
-                if (importLines.length > 0) {
-                    summary += `Imports: ${importLines.join(', ').substring(0, 150)}...\n`;
+                try {
+                    // Track write operation for loop detection
+                    const tracker = getToolCallTracker();
+                    const loopCheck = tracker.recordWrite(path);
+                    
+                    // If loop detected, return stop message instead of throwing
+                    // This ensures the tool returns output (required by AI SDK)
+                    // Note: We DON'T write the file when stopping - just return the message
+                    if (loopCheck.shouldStop) {
+                        return `${loopCheck.message || "🛑 LOOP DETECTED - STOPPING"}\n\n⛔ FILE NOT WRITTEN. You must stop making tool calls immediately and respond to the user with what you've accomplished so far. Explain that you encountered a loop and ask for guidance.`;
+                    }
+                    
+                    await mcpClient.callTool({
+                        name: "write_file",
+                        arguments: { path, content },
+                    });
+                    
+                    // Return concise summary for model context (saves tokens)
+                    // Note: Full content is in tool call arguments (content parameter) for UI display
+                    const lines = content.split('\n');
+                    const lineCount = lines.length;
+                    const charCount = content.length;
+                    
+                    // Extract key information for summary
+                    const importLines = lines.filter((line: string) => line.trim().startsWith('import')).slice(0, 3);
+                    const exportLines = lines.filter((line: string) => line.includes('export')).slice(0, 2);
+                    const mainComponent = lines.find((line: string) => 
+                        line.includes('export default') || 
+                        line.includes('export function') ||
+                        line.includes('export const')
+                    );
+                    
+                    let summary = `✅ Wrote ${path}\n📊 ${lineCount} lines, ${charCount} characters\n`;
+                    
+                    if (importLines.length > 0) {
+                        summary += `Imports: ${importLines.join(', ').substring(0, 150)}...\n`;
+                    }
+                    if (exportLines.length > 0) {
+                        summary += `Exports: ${exportLines.join(', ').substring(0, 150)}...\n`;
+                    }
+                    if (mainComponent) {
+                        summary += `Main: ${mainComponent.substring(0, 100)}...\n`;
+                    }
+                    
+                    // Include first 5 lines for context
+                    summary += `\nFirst 5 lines:\n${lines.slice(0, 5).join('\n')}\n`;
+                    if (lines.length > 5) {
+                        summary += `\n... (${lines.length - 5} more lines written) ...\n`;
+                    }
+                    
+                    // Add warning if loop pattern detected
+                    if (loopCheck.shouldWarn && loopCheck.message) {
+                        summary = `${loopCheck.message}\n\n${summary}`;
+                    }
+                    
+                    return summary;
+                } catch (error) {
+                    console.error("writeFile error:", error);
+                    return `❌ Error writing file ${path}: ${error instanceof Error ? error.message : "Unknown error"}`;
                 }
-                if (exportLines.length > 0) {
-                    summary += `Exports: ${exportLines.join(', ').substring(0, 150)}...\n`;
-                }
-                if (mainComponent) {
-                    summary += `Main: ${mainComponent.substring(0, 100)}...\n`;
-                }
-                
-                // Include first 5 lines for context
-                summary += `\nFirst 5 lines:\n${lines.slice(0, 5).join('\n')}\n`;
-                if (lines.length > 5) {
-                    summary += `\n... (${lines.length - 5} more lines written) ...\n`;
-                }
-                
-                return summary;
             },
         },
         commitAndPush: {
@@ -328,60 +465,114 @@ export function createFreestyleTools(mcpClient: any) {
                 message: z.string().describe("A descriptive commit message (e.g. 'Created spinning cube game')"),
             }),
             execute: async ({ message }: { message: string }) => {
-                // First, commit the changes
-                const commitResult = await mcpClient.callTool({
-                    name: "git_commit_and_push",
-                    arguments: { message },
-                });
-                
-                let commitOutput = `✅ Committed: ${message}`;
-                if (Array.isArray(commitResult.content) && commitResult.content.length > 0) {
-                    const firstContent = commitResult.content[0];
-                    if (firstContent && 'text' in firstContent) {
-                        commitOutput = firstContent.text || commitOutput;
-                    }
-                }
-
-                // Check for TypeScript/build errors after committing
                 try {
-                    // Wait a moment for the dev server to process the changes
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    
-                    // Check TypeScript errors (if tsconfig.json exists)
-                    const tscResult = await mcpClient.callTool({
-                        name: "exec",
-                        arguments: { command: "cd /template && (npx tsc --noEmit 2>&1 || echo 'TypeScript check skipped')" },
+                    // First, commit the changes
+                    const commitResult = await mcpClient.callTool({
+                        name: "git_commit_and_push",
+                        arguments: { message },
                     });
                     
-                    let tscOutput = "";
-                    if (Array.isArray(tscResult.content) && tscResult.content.length > 0) {
-                        const firstContent = tscResult.content[0];
+                    let commitOutput = `✅ Committed: ${message}`;
+                    if (Array.isArray(commitResult.content) && commitResult.content.length > 0) {
+                        const firstContent = commitResult.content[0];
                         if (firstContent && 'text' in firstContent) {
-                            tscOutput = firstContent.text || "";
+                            commitOutput = firstContent.text || commitOutput;
                         }
                     }
-                    
-                    // If there are TypeScript errors, include them in the response
-                    if (tscOutput && 
-                        tscOutput.trim() && 
-                        !tscOutput.includes("Found 0 errors") &&
-                        !tscOutput.includes("TypeScript check skipped") &&
-                        (tscOutput.includes("error TS") || tscOutput.includes("error:"))) {
-                        // Extract relevant error lines (limit to first 30 lines to avoid overwhelming)
-                        const errorLines = tscOutput.split('\n')
-                            .filter(line => line.includes('error') || line.trim().startsWith('/'))
-                            .slice(0, 30)
-                            .join('\n');
+
+                    // Check for TypeScript/build errors after committing
+                    try {
+                        // Wait a moment for the dev server to process the changes
+                        await new Promise(resolve => setTimeout(resolve, 2000));
                         
-                        return `${commitOutput}\n\n❌ TYPESCRIPT ERRORS DETECTED:\n${errorLines}\n\n⚠️ CRITICAL: You must fix these errors immediately. Read the affected files using readFile, identify the issues, and fix them using writeFile or editFile, then commit again.`;
+                        const errors: string[] = [];
+                        
+                        // Check 1: TypeScript errors
+                        const tscResult = await mcpClient.callTool({
+                            name: "exec",
+                            arguments: { command: "cd /template && (npx tsc --noEmit 2>&1 || echo 'TypeScript check completed')" },
+                        });
+                        
+                        let tscOutput = "";
+                        if (Array.isArray(tscResult.content) && tscResult.content.length > 0) {
+                            const firstContent = tscResult.content[0];
+                            if (firstContent && 'text' in firstContent) {
+                                tscOutput = firstContent.text || "";
+                            }
+                        }
+                        
+                        // If there are TypeScript errors, collect them
+                        if (tscOutput && 
+                            tscOutput.trim() && 
+                            !tscOutput.includes("Found 0 errors") &&
+                            (tscOutput.includes("error TS") || tscOutput.includes("error:"))) {
+                            const errorLines = tscOutput.split('\n')
+                                .filter(line => line.includes('error') || line.trim().startsWith('/'))
+                                .slice(0, 20)
+                                .join('\n');
+                            if (errorLines.trim()) {
+                                errors.push(`TYPESCRIPT ERRORS:\n${errorLines}`);
+                            }
+                        }
+                        
+                        // Check 2: Babel/JSX syntax errors using npx babel
+                        // This catches syntax errors that TypeScript might miss
+                        const babelResult = await mcpClient.callTool({
+                            name: "exec",
+                            arguments: { 
+                                command: "cd /template && find . -name '*.tsx' -o -name '*.ts' | grep -v node_modules | head -20 | xargs -I {} sh -c 'npx babel {} --presets=@babel/preset-typescript,@babel/preset-react -o /dev/null 2>&1 || echo \"BABEL_ERROR_IN: {}\"' 2>&1 | grep -E '(SyntaxError|Error:|BABEL_ERROR_IN)' | head -30" 
+                            },
+                        });
+                        
+                        let babelOutput = "";
+                        if (Array.isArray(babelResult.content) && babelResult.content.length > 0) {
+                            const firstContent = babelResult.content[0];
+                            if (firstContent && 'text' in firstContent) {
+                                babelOutput = firstContent.text || "";
+                            }
+                        }
+                        
+                        if (babelOutput && babelOutput.trim() && 
+                            (babelOutput.includes("SyntaxError") || babelOutput.includes("Unexpected token"))) {
+                            errors.push(`JSX/SYNTAX ERRORS:\n${babelOutput.trim()}`);
+                        }
+                        
+                        // Check 3: Try to catch Metro bundler errors by checking recent logs
+                        const metroResult = await mcpClient.callTool({
+                            name: "exec",
+                            arguments: { 
+                                command: "cd /template && (cat .expo/logs/*.log 2>/dev/null | tail -50 | grep -iE '(error|failed|SyntaxError|unexpected)' | head -20) || echo ''" 
+                            },
+                        });
+                        
+                        let metroOutput = "";
+                        if (Array.isArray(metroResult.content) && metroResult.content.length > 0) {
+                            const firstContent = metroResult.content[0];
+                            if (firstContent && 'text' in firstContent) {
+                                metroOutput = firstContent.text || "";
+                            }
+                        }
+                        
+                        if (metroOutput && metroOutput.trim() && 
+                            (metroOutput.includes("SyntaxError") || metroOutput.includes("Unexpected token"))) {
+                            errors.push(`METRO/BUNDLER ERRORS:\n${metroOutput.trim()}`);
+                        }
+                        
+                        // If any errors were found, report them
+                        if (errors.length > 0) {
+                            return `${commitOutput}\n\n❌ BUILD ERRORS DETECTED:\n\n${errors.join('\n\n')}\n\n⚠️ CRITICAL: You must fix these errors immediately. Read the affected files using readFile, identify the issues (look for syntax errors like missing commas, brackets, or unexpected tokens), and fix them using writeFile, then commit again.`;
+                        }
+                        
+                    } catch (error) {
+                        // If error checking fails, still return the commit success
+                        console.error("Error checking for build errors:", error);
                     }
                     
+                    return commitOutput;
                 } catch (error) {
-                    // If error checking fails, still return the commit success
-                    console.error("Error checking for build errors:", error);
+                    console.error("commitAndPush error:", error);
+                    return `❌ Error committing: ${error instanceof Error ? error.message : "Unknown error"}`;
                 }
-                
-                return commitOutput;
             },
         },
         exec: {
@@ -390,18 +581,23 @@ export function createFreestyleTools(mcpClient: any) {
                 command: z.string().describe("The command to execute"),
             }),
             execute: async ({ command }: { command: string }) => {
-                const result = await mcpClient.callTool({
-                    name: "exec",
-                    arguments: { command },
-                });
-                
-                if (Array.isArray(result.content) && result.content.length > 0) {
-                    const firstContent = result.content[0];
-                    if (firstContent && 'text' in firstContent) {
-                        return firstContent.text || "";
+                try {
+                    const result = await mcpClient.callTool({
+                        name: "exec",
+                        arguments: { command },
+                    });
+                    
+                    if (Array.isArray(result.content) && result.content.length > 0) {
+                        const firstContent = result.content[0];
+                        if (firstContent && 'text' in firstContent) {
+                            return firstContent.text || `✅ Executed: ${command}`;
+                        }
                     }
+                    return `✅ Executed: ${command}`;
+                } catch (error) {
+                    console.error("exec error:", error);
+                    return `❌ Error executing command "${command}": ${error instanceof Error ? error.message : "Unknown error"}`;
                 }
-                return "";
             },
         },
     };

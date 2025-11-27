@@ -415,11 +415,14 @@ export const processMessage = internalAction({
             }
 
             // Import dependencies
-            const { createAgent, createFreestyleTools } = await import("./agent");
+            const { createAgent, createFreestyleTools, resetToolCallTracker } = await import("./agent");
             const { stepCountIs } = await import("@convex-dev/agent");
             const { freestyle } = await import("../lib/freestyle");
             const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
             const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+
+            // Reset the tool call tracker for this new response
+            resetToolCallTracker();
 
             // Connect to MCP server once
             const devServer = await freestyle.requestDevServer({ repoId: args.repoId });
@@ -439,7 +442,8 @@ export const processMessage = internalAction({
 
             // Custom context handler to limit context window:
             // - All messages until first commit (planning phase)
-            // - Plus current user message + last user message + last AI response
+            // - Plus recent messages for ongoing work
+            // CRITICAL: Must ensure tool calls and their outputs are always paired
             const contextHandler: ContextHandler = async (_ctx, handlerArgs) => {
                 const { recent, inputPrompt } = handlerArgs;
                 
@@ -458,27 +462,71 @@ export const processMessage = internalAction({
                 
                 // If no commit found yet, include all messages (planning phase)
                 if (firstCommitIndex === -1) {
-                    return [...recent, ...inputPrompt];
+                    const result = [...recent, ...inputPrompt];
+                    console.log("📋 CONTEXT WINDOW (no commit yet - planning phase):");
+                    console.log(`  Total messages: ${result.length}`);
+                    return result;
                 }
                 
-                // Include all messages up to and including the first commit response
-                // The first commit is typically in the assistant's response, so include that message
-                const planningPhase = recent.slice(0, firstCommitIndex + 1);
+                // Find the end of the first commit "block" - we need to include all tool results
+                // that follow the assistant message with commitAndPush
+                let firstCommitEndIndex = firstCommitIndex;
+                for (let i = firstCommitIndex + 1; i < recent.length; i++) {
+                    const msg = recent[i];
+                    // Include subsequent tool messages (they're responses to tool calls)
+                    if (msg.role === "tool") {
+                        firstCommitEndIndex = i;
+                    } else {
+                        // Stop when we hit a non-tool message (user or next assistant turn)
+                        break;
+                    }
+                }
                 
-                // Get the last 2 messages (excluding the current prompt which is in inputPrompt):
-                // - Last AI response
-                // - Last user message  
-                const recentMessages = recent.slice(-2);
+                // Include all messages up to and including the first commit's tool results
+                const planningPhase = recent.slice(0, firstCommitEndIndex + 1);
                 
-                // Deduplicate: don't include messages that are already in planning phase
-                const planningIds = new Set(planningPhase.map((m, i) => `${m.role}-${i}`));
-                const uniqueRecent = recentMessages.filter((m, i) => {
-                    const recentIdx = recent.length - 2 + i;
-                    return !planningIds.has(`${m.role}-${recentIdx}`);
-                });
+                // Get recent messages but ensure we don't break tool call/result pairs
+                // Start from the end and work backwards to find a safe cut point
+                let safeStartIndex = recent.length;
+                const targetRecentCount = 6; // Try to include ~6 recent messages
+                
+                for (let i = recent.length - 1; i >= firstCommitEndIndex + 1 && safeStartIndex > recent.length - targetRecentCount; i--) {
+                    const msg = recent[i];
+                    // Safe to start from a user message
+                    if (msg.role === "user") {
+                        safeStartIndex = i;
+                    }
+                    // Safe to start from an assistant message IF we include all subsequent tool results
+                    else if (msg.role === "assistant") {
+                        // Check if there are tool results after this that we need to include
+                        let hasAllToolResults = true;
+                        for (let j = i + 1; j < recent.length; j++) {
+                            if (recent[j].role === "tool") continue;
+                            break; // Found end of tool results
+                        }
+                        if (hasAllToolResults) {
+                            safeStartIndex = i;
+                        }
+                    }
+                }
+                
+                // Don't include messages that are already in planning phase
+                const recentMessages = safeStartIndex > firstCommitEndIndex 
+                    ? recent.slice(safeStartIndex) 
+                    : [];
                 
                 // Combine: planning phase + recent context + current prompt
-                return [...planningPhase, ...uniqueRecent, ...inputPrompt];
+                const result = [...planningPhase, ...recentMessages, ...inputPrompt];
+                
+                // Debug logging
+                console.log("📋 CONTEXT WINDOW (after first commit):");
+                console.log(`  First commit at index: ${firstCommitIndex}, end at: ${firstCommitEndIndex}`);
+                console.log(`  Planning phase: ${planningPhase.length} messages`);
+                console.log(`  Recent (from ${safeStartIndex}): ${recentMessages.length} messages`);
+                console.log(`  Input prompt: ${inputPrompt.length} messages`);
+                console.log(`  Total context: ${result.length} messages`);
+                
+                return result;
             };
 
             // Use the agent's streamText WITH our custom Freestyle tools
@@ -668,13 +716,63 @@ export const processMessage = internalAction({
         } catch (error) {
             console.error("Error processing message:", error);
             
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            
+            // Check for known recoverable errors
+            const isLoopError = errorMessage.includes("LOOP DETECTED") || errorMessage.includes("Loop detected");
+            const isToolOutputError = errorMessage.includes("No tool output found for function call");
+            const isStreamInterrupted = errorMessage.includes("stream") && (
+                errorMessage.includes("interrupted") || 
+                errorMessage.includes("closed") ||
+                errorMessage.includes("aborted")
+            );
+            const isMcpTimeout = errorMessage.includes("timeout") || errorMessage.includes("ETIMEDOUT");
+            const isConnectionError = errorMessage.includes("ECONNREFUSED") || 
+                errorMessage.includes("ECONNRESET") ||
+                errorMessage.includes("network");
+            
+            // Determine user-friendly message based on error type
+            let userMessage = "";
+            let shouldRethrow = true;
+            
+            if (isLoopError) {
+                userMessage = "🛑 **Response ended early**: I was caught in a repetitive loop and had to stop. Please review the current state of your game and let me know what you'd like me to do differently.";
+                shouldRethrow = false;
+            } else if (isToolOutputError) {
+                userMessage = "⚠️ **Connection interrupted**: The AI's response was interrupted while executing an action. This can happen due to temporary connection issues. Please try sending your message again, or check the current state of your game to see what was completed.";
+                shouldRethrow = false;
+            } else if (isStreamInterrupted) {
+                userMessage = "⚠️ **Stream interrupted**: The response was interrupted unexpectedly. Please try again.";
+                shouldRethrow = false;
+            } else if (isMcpTimeout) {
+                userMessage = "⏱️ **Request timed out**: The operation took too long to complete. This might happen with complex changes. Please try a simpler request or try again.";
+                shouldRethrow = false;
+            } else if (isConnectionError) {
+                userMessage = "🔌 **Connection error**: Lost connection to the development server. Please try again in a moment.";
+                shouldRethrow = false;
+            }
+            
+            // Save user-friendly error message if we have one
+            if (userMessage) {
+                await ctx.runMutation(internal.chat.saveAgentResponse, {
+                    chatId: args.chatId,
+                    text: userMessage,
+                    totalTokens: 0,
+                });
+            }
+            
             // Ensure AI turn is reset even on error
             await ctx.runMutation(internal.chat.setAiTurn, {
                 chatId: args.chatId,
                 isAiTurn: false,
             });
             
-            // Re-throw the error
+            // Don't re-throw handled errors
+            if (!shouldRethrow) {
+                return;
+            }
+            
+            // Re-throw unhandled errors
             throw error;
         }
     },
