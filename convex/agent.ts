@@ -14,7 +14,7 @@ export function createAgent(apiKey?: string) {
     
     return new Agent(components.agent, {
         name: "Kayra, the Game Creator",
-        languageModel: openai("gpt-5-nano"),
+        languageModel: openai("gpt-5-mini"),
         instructions: `You are Kayra, the Game Creator - an expert 3D mobile game builder specialized in creating interactive 3D games using Expo Router, React Native, and react-three-fiber.
 
 CRITICAL RULES:
@@ -258,42 +258,16 @@ export function createFreestyleTools(mcpClient: any) {
                     if (firstContent && 'text' in firstContent) {
                         const fullContent = firstContent.text || "";
                         
-                        // Return concise summary for model context (saves tokens)
-                        // Note: Full content is available in tool call arguments for UI display
                         if (fullContent) {
-                            const lines = fullContent.split('\n');
-                            const lineCount = lines.length;
-                            const charCount = fullContent.length;
+                            // Return FULL content so model can use it immediately
+                            // The full content will be stored in thread, but we'll replace it with
+                            // a summary later to avoid context bloat in future messages
+                            // Store full content in metadata for UI display
+                            const fullContentData = JSON.stringify({ _fullContent: fullContent, _path: path });
                             
-                            // Extract key information: imports, exports, main functions/components
-                            const importLines = lines.filter((line: string) => line.trim().startsWith('import')).slice(0, 5);
-                            const exportLines = lines.filter((line: string) => line.includes('export')).slice(0, 3);
-                            const functionLines = lines.filter((line: string) => 
-                                line.includes('function ') || 
-                                line.includes('const ') && line.includes('= (') ||
-                                line.includes('const ') && line.includes('=>')
-                            ).slice(0, 5);
-                            
-                            let summary = `✅ Read ${path}\n📊 ${lineCount} lines, ${charCount} characters\n`;
-                            
-                            if (importLines.length > 0) {
-                                summary += `\nImports: ${importLines.join('; ').substring(0, 200)}...\n`;
-                            }
-                            if (exportLines.length > 0) {
-                                summary += `Exports: ${exportLines.join('; ').substring(0, 200)}...\n`;
-                            }
-                            if (functionLines.length > 0) {
-                                summary += `Functions: ${functionLines.join('; ').substring(0, 300)}...\n`;
-                            }
-                            
-                            // Include first 10 lines and last 5 lines for context
-                            summary += `\nFirst 10 lines:\n${lines.slice(0, 10).join('\n')}\n`;
-                            if (lines.length > 15) {
-                                summary += `\n... (${lines.length - 15} more lines) ...\n`;
-                                summary += `Last 5 lines:\n${lines.slice(-5).join('\n')}\n`;
-                            }
-                            
-                            return summary;
+                            // Return full content + hidden metadata marker for UI
+                            // Model gets full content now, but we can replace it in thread later
+                            return fullContent + `\n\n<!--FULL_CONTENT_METADATA:${fullContentData}-->`;
                         }
                     }
                 }

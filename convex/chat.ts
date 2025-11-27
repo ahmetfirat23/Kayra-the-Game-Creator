@@ -461,6 +461,142 @@ export const processMessage = internalAction({
             // Close MCP connection
             await mcpClient.close();
 
+            // Post-process: Replace full file contents in readFile tool outputs with summaries
+            // This prevents context bloat in future messages while keeping full content for UI
+            try {
+                const { listMessages } = await import("@convex-dev/agent");
+                const recentMessages = await listMessages(ctx, components.agent, {
+                    threadId: args.threadId,
+                    paginationOpts: { numItems: 20, cursor: null },
+                });
+
+                // Find and update messages with readFile tool calls that have full content
+                for (const msg of recentMessages.page) {
+                    // Check if this is an assistant message with content
+                    const messageContent = msg.message;
+                    if (
+                        messageContent && 
+                        typeof messageContent === "object" &&
+                        "role" in messageContent &&
+                        messageContent.role === "assistant" &&
+                        "content" in messageContent &&
+                        Array.isArray(messageContent.content)
+                    ) {
+                        let needsUpdate = false;
+                        const updatedContent = messageContent.content.map((part: unknown) => {
+                            const p = part as { 
+                                type?: string; 
+                                toolName?: string;
+                                toolCallId?: string;
+                                output?: { type?: string; value?: string } | string;
+                                [key: string]: unknown;
+                            };
+                            
+                            // Check if this is a tool-result for readFile with full content
+                            if (p.type === "tool-result" && p.toolName === "readFile") {
+                                let outputValue = "";
+                                if (typeof p.output === "string") {
+                                    outputValue = p.output;
+                                } else if (p.output && typeof p.output === "object" && "value" in p.output) {
+                                    outputValue = typeof p.output.value === "string" ? p.output.value : "";
+                                }
+                                
+                                // Check if output contains full content (has metadata marker or is very long)
+                                const metadataMatch = outputValue.match(/<!--FULL_CONTENT_METADATA:(.+?)-->/);
+                                
+                                if (metadataMatch || (outputValue.length > 500 && !outputValue.includes("✅ Read"))) {
+                                    try {
+                                        let fullContent = "";
+                                        let path = "";
+                                        
+                                        if (metadataMatch) {
+                                            const metadata = JSON.parse(metadataMatch[1]);
+                                            fullContent = metadata._fullContent || "";
+                                            path = metadata._path || "";
+                                        } else {
+                                            // Extract full content directly (it's the output before metadata)
+                                            fullContent = outputValue.split("<!--FULL_CONTENT_METADATA:")[0].trim();
+                                            path = "unknown";
+                                        }
+                                        
+                                        if (fullContent) {
+                                            needsUpdate = true;
+                                            
+                                            // Create summary
+                                            const lines = fullContent.split('\n');
+                                            const lineCount = lines.length;
+                                            const charCount = fullContent.length;
+                                            
+                                            const importLines = lines.filter((line: string) => line.trim().startsWith('import')).slice(0, 5);
+                                            const exportLines = lines.filter((line: string) => line.includes('export')).slice(0, 3);
+                                            const functionLines = lines.filter((line: string) => 
+                                                line.includes('function ') || 
+                                                line.includes('const ') && line.includes('= (') ||
+                                                line.includes('const ') && line.includes('=>')
+                                            ).slice(0, 5);
+                                            
+                                            let summary = `✅ Read ${path}\n📊 ${lineCount} lines, ${charCount} characters\n`;
+                                            
+                                            if (importLines.length > 0) {
+                                                summary += `\nImports: ${importLines.join('; ').substring(0, 200)}...\n`;
+                                            }
+                                            if (exportLines.length > 0) {
+                                                summary += `Exports: ${exportLines.join('; ').substring(0, 200)}...\n`;
+                                            }
+                                            if (functionLines.length > 0) {
+                                                summary += `Functions: ${functionLines.join('; ').substring(0, 300)}...\n`;
+                                            }
+                                            
+                                            summary += `\nFirst 10 lines:\n${lines.slice(0, 10).join('\n')}\n`;
+                                            if (lines.length > 15) {
+                                                summary += `\n... (${lines.length - 15} more lines) ...\n`;
+                                                summary += `Last 5 lines:\n${lines.slice(-5).join('\n')}\n`;
+                                            }
+                                            
+                                            // Preserve metadata for UI
+                                            const metadataStr = metadataMatch ? metadataMatch[0] : `<!--FULL_CONTENT_METADATA:${JSON.stringify({ _fullContent: fullContent, _path: path })}-->`;
+                                            
+                                            // Update the output, preserving all required properties
+                                            return {
+                                                ...p,
+                                                type: "tool-result",
+                                                toolName: p.toolName,
+                                                toolCallId: p.toolCallId || "",
+                                                output: {
+                                                    type: "text",
+                                                    value: summary + `\n\n${metadataStr}`,
+                                                },
+                                            } as typeof p;
+                                        }
+                                    } catch (error) {
+                                        console.error("Error processing readFile output:", error);
+                                    }
+                                }
+                            }
+                            
+                            return p;
+                        }) as typeof messageContent.content;
+
+                        // Update the message if we modified any parts
+                        if (needsUpdate && msg._id) {
+                            await ctx.runMutation(components.agent.messages.updateMessage, {
+                                messageId: msg._id,
+                                patch: {
+                                    message: {
+                                        role: "assistant",
+                                        content: updatedContent,
+                                    },
+                                },
+                            });
+                            console.log("Replaced full content with summary for message:", msg._id);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Error post-processing tool outputs:", error);
+                // Don't fail the whole request if post-processing fails
+            }
+
             // Save the final response text and token usage to the messages table
             if (finalText) {
                 await ctx.runMutation(internal.chat.saveAgentResponse, {

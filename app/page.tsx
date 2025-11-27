@@ -237,16 +237,59 @@ function MessageComponent({ message }: { message: UIMessage }) {
                       </div>
                     )}
                     {/* Show tool output */}
-                    {tool.output && (
-                      <div>
-                        {toolWithArgs.args !== undefined && toolWithArgs.args !== null && (
-                          <div className="text-xs font-bold text-[#5A8A5E] dark:text-blue-300 mb-1 mt-3">Output:</div>
-                        )}
-                        <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed">
-                          {typeof tool.output === 'string' ? tool.output : JSON.stringify(tool.output, null, 2)}
-                        </pre>
-                      </div>
-                    )}
+                    {tool.output && (() => {
+                      const outputStr = typeof tool.output === 'string' ? tool.output : JSON.stringify(tool.output, null, 2);
+                      
+                      // Extract full content if present (for readFile)
+                      // Check for both old and new metadata formats
+                      const fullContentMatch = outputStr.match(/<!--FULL_CONTENT_METADATA:(.+?)-->/) || 
+                                               outputStr.match(/<!--FULL_CONTENT:(.+?)-->/);
+                      let displayOutput = outputStr;
+                      let fullContent: string | null = null;
+                      
+                      if (fullContentMatch) {
+                        try {
+                          const parsed = JSON.parse(fullContentMatch[1]);
+                          if (parsed._fullContent) {
+                            fullContent = parsed._fullContent;
+                            // Remove the metadata marker from display
+                            displayOutput = outputStr.replace(/<!--FULL_CONTENT[^:]*:.+?-->/, '').trim();
+                          }
+                        } catch {
+                          // If parsing fails, check if the output itself is the full content
+                          // (for readFile, the output might be the full file content)
+                          if (outputStr.length > 1000 && !outputStr.includes('✅ Read')) {
+                            // Likely full content without metadata marker
+                            fullContent = outputStr.split('<!--FULL_CONTENT_METADATA:')[0].trim();
+                            displayOutput = `✅ File content (${fullContent.split('\n').length} lines)`;
+                          }
+                        }
+                      } else if (outputStr.length > 1000 && toolName.includes('readFile')) {
+                        // If it's a readFile and output is large, it's likely the full content
+                        fullContent = outputStr.split('<!--FULL_CONTENT_METADATA:')[0].trim();
+                        displayOutput = `✅ File content (${fullContent.split('\n').length} lines)`;
+                      }
+                      
+                      return (
+                        <div>
+                          {toolWithArgs.args !== undefined && toolWithArgs.args !== null && (
+                            <div className="text-xs font-bold text-[#5A8A5E] dark:text-blue-300 mb-1 mt-3">Output:</div>
+                          )}
+                          <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed">
+                            {displayOutput}
+                          </pre>
+                          {/* Show full content if available (for readFile) */}
+                          {fullContent && (
+                            <div className="mt-3">
+                              <div className="text-xs font-bold text-[#5A8A5E] dark:text-blue-300 mb-1">Full Content:</div>
+                              <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed bg-[#2D1B00]/10 dark:bg-black/20 p-2 rounded">
+                                {fullContent}
+                              </pre>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
