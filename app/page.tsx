@@ -317,6 +317,7 @@ export default function Home() {
     message: string;
     onConfirm: () => void;
   } | null>(null);
+  const [mobileView, setMobileView] = useState<"chat" | "preview">("chat");
   
   const chats = useQuery(api.chat.listChats) || [];
   const apiKeyStatus = useQuery(api.users.getApiKey);
@@ -835,10 +836,36 @@ export default function Home() {
         </div>
       )}
 
+      {/* Mobile Tab Switcher */}
+      <div className="md:hidden flex border-b border-[#B5A58D] dark:border-gray-700">
+        <button
+          onClick={() => setMobileView("chat")}
+          className={`flex-1 py-2.5 text-sm font-bold transition-colors flex items-center justify-center gap-2 ${
+            mobileView === "chat"
+              ? "bg-[#5A8A5E] dark:bg-blue-600 text-white"
+              : "bg-[#F5EFE3] dark:bg-gray-800 text-[#5B4332] dark:text-gray-400"
+          }`}
+        >
+          <span>💬</span> Chat
+        </button>
+        <button
+          onClick={() => setMobileView("preview")}
+          className={`flex-1 py-2.5 text-sm font-bold transition-colors flex items-center justify-center gap-2 ${
+            mobileView === "preview"
+              ? "bg-[#5A8A5E] dark:bg-blue-600 text-white"
+              : "bg-[#F5EFE3] dark:bg-gray-800 text-[#5B4332] dark:text-gray-400"
+          }`}
+        >
+          <span>🎮</span> Preview
+        </button>
+      </div>
+
       {/* Main Content Area */}
       <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-        {/* Chat Panel - full width on mobile, 50% on desktop */}
-        <div className="w-full md:w-1/2 h-1/2 md:h-full flex flex-col border-b md:border-b-0 md:border-r border-[#B5A58D] dark:border-gray-700 overflow-hidden">
+        {/* Chat Panel - fullscreen on mobile when selected, 50% on desktop */}
+        <div className={`w-full md:w-1/2 flex-1 md:flex-none md:h-full flex flex-col md:border-r border-[#B5A58D] dark:border-gray-700 overflow-hidden ${
+          mobileView === "chat" ? "flex" : "hidden md:flex"
+        }`}>
 
         {/* Messages */}
         <div className="flex-1 p-3 md:p-6 overflow-y-auto space-y-3 md:space-y-4 min-h-0">
@@ -909,8 +936,10 @@ export default function Home() {
         </form>
       </div>
 
-      {/* Preview Panel - full width on mobile, 50% on desktop */}
-      <div className="w-full md:w-1/2 h-1/2 md:h-full flex flex-col overflow-hidden">
+      {/* Preview Panel - fullscreen on mobile when selected, 50% on desktop */}
+      <div className={`w-full md:w-1/2 flex-1 md:flex-none md:h-full flex flex-col overflow-hidden ${
+        mobileView === "preview" ? "flex" : "hidden md:flex"
+      }`}>
         <div className="flex-1 bg-[#D4C5A9] dark:bg-gray-950 p-3 md:p-6 flex items-center justify-center">
           {selectedChat?.repoId === "pending" ? (
             <div className="text-[#5A8A5E] dark:text-blue-500 text-center animate-pulse">
