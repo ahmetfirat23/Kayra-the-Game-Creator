@@ -208,22 +208,56 @@ export const listThreadMessages = query({
             paginationOpts: args.paginationOpts,
         });
 
-        // Attach usage to metadata so it survives conversion to UIMessage
+        // Aggregate usage by order (messages with same order are grouped into one UIMessage)
+        // This fixes undercounting when multi-step agentic responses create multiple messages
+        // that get merged into a single UIMessage by toUIMessages
+        type DocType = typeof paginatedDocs.page[0];
+        type UsageType = { promptTokens?: number; completionTokens?: number; totalTokens?: number };
+        const usageByOrder = new Map<number, UsageType>();
+        
+        for (const doc of paginatedDocs.page) {
+            const order = (doc as { order?: number }).order ?? 0;
+            const docUsage = doc.usage as UsageType | undefined;
+            if (docUsage) {
+                const existing = usageByOrder.get(order) || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+                usageByOrder.set(order, {
+                    promptTokens: (existing.promptTokens || 0) + (docUsage.promptTokens || 0),
+                    completionTokens: (existing.completionTokens || 0) + (docUsage.completionTokens || 0),
+                    totalTokens: (existing.totalTokens || 0) + (docUsage.totalTokens || 0),
+                });
+            }
+        }
+
+        // Track which orders we've already attached aggregated usage to (attach to first message per order)
+        const attachedOrders = new Set<number>();
+        
+        // Attach aggregated usage to metadata so it survives conversion to UIMessage
+        // We attach to the FIRST message per order since toUIMessages uses group.find()
         const docsWithMetadata = paginatedDocs.page.map((doc) => {
             const existingMetadata = (doc as { metadata?: unknown }).metadata;
+            const order = (doc as { order?: number }).order ?? 0;
+            
+            // Only attach aggregated usage to the first message of each order
+            const isFirstOfOrder = !attachedOrders.has(order);
+            if (isFirstOfOrder) {
+                attachedOrders.add(order);
+            }
+            
+            const aggregatedUsage = isFirstOfOrder ? usageByOrder.get(order) : undefined;
+            
             return {
                 ...doc,
-                metadata: {
+                metadata: aggregatedUsage ? {
                     ...(typeof existingMetadata === "object" && existingMetadata !== null
                         ? existingMetadata
                         : {}),
-                    usage: doc.usage,
-                },
+                    usage: aggregatedUsage,
+                } : existingMetadata,
             };
         });
 
         // Convert to UIMessage objects for the React client
-        const page = toUIMessages(docsWithMetadata);
+        const page = toUIMessages(docsWithMetadata as DocType[]);
 
         // Fetch streaming deltas
         const streams = await syncStreams(ctx, components.agent, {
@@ -709,6 +743,37 @@ export const processMessage = internalAction({
             } catch (error) {
                 console.error("Error post-processing tool outputs:", error);
                 // Don't fail the whole request if post-processing fails
+            }
+
+            // Update the last assistant message with the TOTAL aggregated token usage
+            // (The AI SDK's result.usage contains the sum of all steps)
+            try {
+                const { listMessages } = await import("@convex-dev/agent");
+                const latestMessages = await listMessages(ctx, components.agent, {
+                    threadId: args.threadId,
+                    paginationOpts: { numItems: 50, cursor: null },
+                });
+                
+                // Find the last assistant message and update its usage with the total
+                const lastAssistantMsg = [...latestMessages.page]
+                    .reverse()
+                    .find(m => m.message && typeof m.message === 'object' && 'role' in m.message && m.message.role === 'assistant');
+                
+                if (lastAssistantMsg && lastAssistantMsg._id && totalTokens > 0) {
+                    await ctx.runMutation(components.agent.messages.updateMessage, {
+                        messageId: lastAssistantMsg._id,
+                        patch: {
+                            usage: {
+                                promptTokens: usage?.promptTokens ?? 0,
+                                completionTokens: usage?.completionTokens ?? 0,
+                                totalTokens: totalTokens,
+                            },
+                        },
+                    });
+                    console.log(`📊 Updated last assistant message with aggregated tokens: ${totalTokens}`);
+                }
+            } catch (error) {
+                console.error("Error updating aggregated token usage:", error);
             }
 
             // Save the final response text and token usage to the messages table

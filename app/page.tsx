@@ -181,10 +181,9 @@ function LandingPage() {
 /**
  * Message component that renders a single message with smooth text streaming.
  * Uses useSmoothText to animate text as it streams in for a better UX.
- * @param aggregatedTokens - If provided, shows this aggregated token count instead of per-message tokens
  * @param showTokens - Whether to show token count on this message (should only be true for last assistant msg in a sequence)
  */
-function MessageComponent({ message, aggregatedTokens, showTokens = true }: { message: UIMessage; aggregatedTokens?: number; showTokens?: boolean }) {
+function MessageComponent({ message, showTokens = true }: { message: UIMessage; showTokens?: boolean }) {
   const [visibleText] = useSmoothText(message.text, {
     startStreaming: message.status === "streaming",
   });
@@ -192,10 +191,10 @@ function MessageComponent({ message, aggregatedTokens, showTokens = true }: { me
 
   const isUser = message.role === "user";
   const isStreaming = message.status === "streaming";
-  // Use aggregated tokens if provided, otherwise fall back to message's own tokens
+  // Get token usage from message metadata (backend aggregates all step tokens onto last assistant message)
   const usage = (message.metadata as { usage?: { totalTokens?: number } } | undefined)?.usage;
   // Only show tokens when message is complete (not streaming) and showTokens is true
-  const totalTokens = !isUser && !isStreaming && showTokens ? (aggregatedTokens ?? usage?.totalTokens) : undefined;
+  const totalTokens = !isUser && !isStreaming && showTokens ? usage?.totalTokens : undefined;
 
   // Extract tool calls from message parts
   type MessagePart = { type?: string; output?: string | object; [key: string]: unknown };
@@ -1113,40 +1112,16 @@ export default function Home() {
           ) : selectedChat && selectedChat.repoId && selectedChat.repoId !== "pending" ? (
             messages && messages.length > 0 ? (
               messages.map((msg, idx) => {
-                // Calculate if this is the last assistant message before a user message (or end of messages)
-                // to show aggregated tokens only on that message
-                let aggregatedTokens: number | undefined;
-                let showTokens = false;
-                
-                if (msg.role === "assistant") {
-                  // Check if next message is user message or this is the last message
-                  const nextMsg = messages[idx + 1];
-                  const isLastInSequence = !nextMsg || nextMsg.role === "user";
-                  
-                  if (isLastInSequence) {
-                    showTokens = true;
-                    // Aggregate tokens from all assistant messages in this sequence (going backwards)
-                    let totalAggregated = 0;
-                    for (let i = idx; i >= 0; i--) {
-                      const m = messages[i];
-                      if (m.role === "user") break;
-                      if (m.role === "assistant") {
-                        const usage = (m.metadata as { usage?: { totalTokens?: number } } | undefined)?.usage;
-                        totalAggregated += usage?.totalTokens ?? 0;
-                      }
-                    }
-                    if (totalAggregated > 0) {
-                      aggregatedTokens = totalAggregated;
-                    }
-                  }
-                }
+                // Show tokens only on the last assistant message before a user message (or end)
+                // The backend already aggregates all step tokens onto the last assistant message
+                const nextMsg = messages[idx + 1];
+                const isLastAssistantInSequence = msg.role === "assistant" && (!nextMsg || nextMsg.role === "user");
                 
                 return (
                   <MessageComponent 
                     key={msg.id} 
                     message={msg} 
-                    aggregatedTokens={aggregatedTokens}
-                    showTokens={msg.role === "user" || showTokens}
+                    showTokens={msg.role === "user" || isLastAssistantInSequence}
                   />
                 );
               })
