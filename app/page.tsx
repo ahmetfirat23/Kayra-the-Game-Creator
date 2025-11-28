@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { useSmoothText, type UIMessage } from "@convex-dev/agent/react";
 import { api } from "../convex/_generated/api";
@@ -11,71 +11,138 @@ import ReactMarkdown from "react-markdown";
 import { UserButton, SignInButton, useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 
-function LandingPage() {
+// Theme toggle hook
+function useTheme() {
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    // Check if dark class is already on document (set by layout script)
+    const isDark = document.documentElement.classList.contains('dark');
+    setTheme(isDark ? 'dark' : 'light');
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    if (newTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
+
+  return { theme, toggleTheme, mounted };
+}
+
+// Theme toggle button component
+function ThemeToggle({ theme, onToggle }: { theme: 'light' | 'dark'; onToggle: () => void }) {
   return (
-    <main className="h-screen flex flex-col bg-gradient-to-br from-[#E8DCC8] via-[#F5EFE3] to-[#D4C5A9] dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-auto">
+    <button
+      type="button"
+      onClick={onToggle}
+      className="relative text-[10px] md:text-xs w-8 h-8 md:w-9 md:h-9 rounded-full font-bold bg-[#F8F9FA] dark:bg-[#1A202C] hover:bg-[#E8F4FC] dark:hover:bg-[#4A5568] text-[#718096] dark:text-[#A0AEC0] transition-all flex items-center justify-center overflow-hidden"
+      aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+    >
+      <span className={`absolute transition-all duration-300 ${theme === 'light' ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-90 scale-50'}`}>
+        🌙
+      </span>
+      <span className={`absolute transition-all duration-300 ${theme === 'dark' ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 rotate-90 scale-50'}`}>
+        ☀️
+      </span>
+    </button>
+  );
+}
+
+function LandingPage() {
+  const { theme, toggleTheme, mounted } = useTheme();
+  
+  return (
+    <main className="min-h-screen md:h-screen flex flex-col bg-gradient-to-br from-[#F0E6FA] via-[#FAFBFC] to-[#E8F4FC] dark:from-[#1A202C] dark:via-[#2D3748] dark:to-[#1A202C] overflow-y-auto md:overflow-hidden relative transition-colors duration-300">
+      {/* Theme Toggle - Top Right */}
+      <div className="absolute top-4 right-4 z-20">
+        {mounted && <ThemeToggle theme={theme} onToggle={toggleTheme} />}
+      </div>
+      
+      {/* Decorative blobs */}
+      <div className="absolute top-20 left-10 w-64 h-64 bg-[#D4B8E8] dark:bg-[#6B4A8C] rounded-full blur-3xl opacity-30 dark:opacity-20 pointer-events-none" />
+      <div className="absolute bottom-40 right-20 w-80 h-80 bg-[#A8D4E6] dark:bg-[#4A6B8C] rounded-full blur-3xl opacity-30 dark:opacity-20 pointer-events-none" />
+      <div className="absolute top-1/2 left-1/3 w-48 h-48 bg-[#B8E8C8] dark:bg-[#4A8C6B] rounded-full blur-3xl opacity-20 dark:opacity-15 pointer-events-none" />
+      
       {/* Hero Section */}
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-4 relative z-10 min-h-0">
         <div className="max-w-5xl mx-auto text-center w-full">
           {/* Logo and Title */}
-          <div className="mb-6">
-            <div className="flex items-center justify-center gap-3 mb-3">
-              <div className="text-5xl">🌳</div>
+          <div className="mb-5 animate-fade-in">
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <div className="text-5xl animate-float">🌳</div>
             </div>
-            <h1 className="text-5xl font-bold mb-0 pb-1 leading-tight bg-gradient-to-r from-[#2D1B00] via-[#5B4332] to-[#5A8A5E] dark:from-green-400 dark:via-blue-400 dark:to-purple-400 bg-clip-text text-transparent">
+            <h1 className="text-4xl md:text-5xl font-bold mb-1 leading-tight bg-gradient-to-r from-[#8B7EC8] via-[#7EB8D8] to-[#7EC8A8] bg-clip-text text-transparent">
               Kayra
             </h1>
-            <p className="text-xl text-[#5B4332] dark:text-gray-300 font-medium mb-3">
+            <p className="text-lg text-[#718096] dark:text-[#A0AEC0] font-medium mb-2">
               the Game Creator
             </p>
-            <p className="text-base text-[#6B5844] dark:text-gray-400 max-w-2xl mx-auto">
+            <p className="text-sm text-[#A0AEC0] dark:text-[#718096] max-w-xl mx-auto leading-relaxed">
               Transform your game ideas into reality with AI-powered 3D game creation
             </p>
           </div>
 
           {/* Features Grid */}
-          <div className="grid md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-[#B5A58D] dark:border-gray-700">
-              <div className="text-3xl mb-2">🎮</div>
-              <h3 className="text-base font-bold text-[#2D1B00] dark:text-white mb-1">
+          <div className="grid md:grid-cols-3 gap-4 mb-5">
+            <div className="bg-white/80 dark:bg-[#2D3748]/80 backdrop-blur-sm rounded-2xl p-4 shadow-[0_4px_24px_rgba(168,212,230,0.2)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.3)] border border-[#E8F4FC] dark:border-[#4A5568] hover:shadow-[0_8px_32px_rgba(168,212,230,0.3)] dark:hover:shadow-[0_8px_32px_rgba(0,0,0,0.4)] transition-all duration-300 hover:-translate-y-1">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#A8D4E6] to-[#88C4D6] dark:from-[#6BA8C8] dark:to-[#5B98B8] flex items-center justify-center text-xl mb-3 mx-auto shadow-md">
+                🎮
+              </div>
+              <h3 className="text-base font-bold text-[#4A5568] dark:text-[#E2E8F0] mb-1">
                 Create 3D Games
               </h3>
-              <p className="text-xs text-[#5B4332] dark:text-gray-400">
-                Tell Kayra your game idea and watch it come to life in real-time
+              <p className="text-xs text-[#718096] dark:text-[#A0AEC0] leading-relaxed">
+                Tell Kayra your game idea and watch it come to life
               </p>
             </div>
 
-            <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-[#B5A58D] dark:border-gray-700">
-              <div className="text-3xl mb-2">⚡</div>
-              <h3 className="text-base font-bold text-[#2D1B00] dark:text-white mb-1">
+            <div className="bg-white/80 dark:bg-[#2D3748]/80 backdrop-blur-sm rounded-2xl p-4 shadow-[0_4px_24px_rgba(212,184,232,0.2)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.3)] border border-[#F0E6FA] dark:border-[#4A5568] hover:shadow-[0_8px_32px_rgba(212,184,232,0.3)] dark:hover:shadow-[0_8px_32px_rgba(0,0,0,0.4)] transition-all duration-300 hover:-translate-y-1">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#D4B8E8] to-[#C4A8D8] dark:from-[#A888C8] dark:to-[#9878B8] flex items-center justify-center text-xl mb-3 mx-auto shadow-md">
+                ⚡
+              </div>
+              <h3 className="text-base font-bold text-[#4A5568] dark:text-[#E2E8F0] mb-1">
                 Instant Preview
               </h3>
-              <p className="text-xs text-[#5B4332] dark:text-gray-400">
-                See your game running live as Kayra builds it for you
+              <p className="text-xs text-[#718096] dark:text-[#A0AEC0] leading-relaxed">
+                See your game running live as Kayra builds it
               </p>
             </div>
 
-            <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-sm rounded-xl p-4 shadow-lg border border-[#B5A58D] dark:border-gray-700">
-              <div className="text-3xl mb-2">🤖</div>
-              <h3 className="text-base font-bold text-[#2D1B00] dark:text-white mb-1">
+            <div className="bg-white/80 dark:bg-[#2D3748]/80 backdrop-blur-sm rounded-2xl p-4 shadow-[0_4px_24px_rgba(184,232,200,0.2)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.3)] border border-[#E8F8F0] dark:border-[#4A5568] hover:shadow-[0_8px_32px_rgba(184,232,200,0.3)] dark:hover:shadow-[0_8px_32px_rgba(0,0,0,0.4)] transition-all duration-300 hover:-translate-y-1">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#B8E8C8] to-[#98D8B8] dark:from-[#88C8A8] dark:to-[#78B898] flex items-center justify-center text-xl mb-3 mx-auto shadow-md">
+                🤖
+              </div>
+              <h3 className="text-base font-bold text-[#4A5568] dark:text-[#E2E8F0] mb-1">
                 AI-Powered
               </h3>
-              <p className="text-xs text-[#5B4332] dark:text-gray-400">
-                Advanced AI understands your vision and creates the code
+              <p className="text-xs text-[#718096] dark:text-[#A0AEC0] leading-relaxed">
+                Advanced AI understands your vision and creates code
               </p>
             </div>
           </div>
 
           {/* Pricing Info */}
-          <div className="bg-gradient-to-r from-[#5A8A5E]/20 to-[#D4C5A9]/20 dark:from-green-900/30 dark:to-blue-900/30 backdrop-blur-sm rounded-2xl p-6 mb-6 border-2 border-[#5A8A5E] dark:border-green-700 shadow-xl">
-            <div className="text-2xl mb-2">🎁</div>
-            <h3 className="text-xl font-bold text-[#2D1B00] dark:text-white mb-2">
-              Start Creating for Free
-            </h3>
-            <p className="text-base text-[#4A3425] dark:text-gray-300 mb-1">
-              Get <span className="font-bold text-[#5A8A5E] dark:text-green-400 text-lg">5 free messages per day</span> to bring your game ideas to life
+          <div className="bg-gradient-to-r from-[#E8F8F0] via-white to-[#E8F4FC] dark:from-[#1a3a2a] dark:via-[#2D3748] dark:to-[#1a2a3a] backdrop-blur-sm rounded-2xl p-5 mb-5 border-2 border-[#B8E8C8] dark:border-[#88C8A8] shadow-[0_8px_32px_rgba(184,232,200,0.2)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#B8E8C8] to-[#98D8B8] dark:from-[#88C8A8] dark:to-[#78B898] flex items-center justify-center text-xl shadow-md">
+                🎁
+              </div>
+              <h3 className="text-xl font-bold text-[#4A5568] dark:text-[#E2E8F0]">
+                Start Creating for Free
+              </h3>
+            </div>
+            <p className="text-base text-[#718096] dark:text-[#A0AEC0]">
+              Get <span className="font-bold text-[#7EC8A8] dark:text-[#88C8A8]">5 free messages per day</span> to bring your game ideas to life
             </p>
-            <p className="text-xs text-[#6B5844] dark:text-gray-400">
+            <p className="text-xs text-[#A0AEC0] mt-1">
               No credit card required • Start building immediately
             </p>
           </div>
@@ -83,14 +150,14 @@ function LandingPage() {
           {/* CTA Button */}
           <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
             <SignInButton mode="modal">
-              <button className="bg-[#5A8A5E] dark:bg-green-600 hover:bg-[#4A7C4E] dark:hover:bg-green-700 text-white font-bold text-base px-8 py-3 rounded-lg shadow-lg transform transition hover:scale-105">
-                Get Started Free
+              <button className="bg-gradient-to-r from-[#A8D4E6] to-[#88C4D6] dark:from-[#6BA8C8] dark:to-[#5B98B8] hover:from-[#98C4D6] hover:to-[#78B4C6] dark:hover:from-[#5B98B8] dark:hover:to-[#4B88A8] text-white font-bold text-base px-8 py-3 rounded-full shadow-[0_4px_16px_rgba(168,212,230,0.4)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.4)] transform transition-all duration-300 hover:scale-105 hover:shadow-[0_8px_24px_rgba(168,212,230,0.5)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
+                Get Started Free ✨
               </button>
             </SignInButton>
-            <p className="text-xs text-[#6B5844] dark:text-gray-500">
+            <p className="text-sm text-[#A0AEC0] dark:text-[#718096]">
               Already have an account? 
               <SignInButton mode="modal">
-                <button className="ml-1 text-[#5A8A5E] dark:text-green-400 font-bold hover:underline">
+                <button className="ml-2 text-[#7EB8D8] dark:text-[#6BA8C8] font-bold hover:text-[#6EA8C8] dark:hover:text-[#8BC8E8] transition-colors">
                   Sign in
                 </button>
               </SignInButton>
@@ -100,9 +167,9 @@ function LandingPage() {
       </div>
 
       {/* Footer */}
-      <footer className="py-4 border-t border-[#B5A58D] dark:border-gray-700 flex-shrink-0">
+      <footer className="py-3 border-t border-[#E8F4FC] dark:border-[#2D3748] flex-shrink-0 relative z-10">
         <div className="max-w-4xl mx-auto px-4 text-center">
-          <p className="text-xs text-[#6B5844] dark:text-gray-500">
+          <p className="text-xs text-[#A0AEC0] dark:text-[#718096]">
             © 2025 Kayra • Powered by OpenAI • Built for Creators
           </p>
         </div>
@@ -148,21 +215,21 @@ function MessageComponent({ message, aggregatedTokens, showTokens = true }: { me
 
   return (
     <div 
-      className={`p-2 md:p-3 rounded-lg max-w-[95%] md:max-w-[90%] overflow-hidden ${
+      className={`p-3 md:p-4 rounded-2xl max-w-[95%] md:max-w-[90%] overflow-hidden shadow-sm transition-all duration-200 ${
         isUser
-        ? "bg-[#5A8A5E] dark:bg-blue-600 self-end ml-auto"
-        : "bg-[#D4C5A9] dark:bg-gray-700"
+        ? "bg-gradient-to-br from-[#A8D4E6] to-[#88C4D6] dark:from-[#6BA8C8] dark:to-[#5B98B8] self-end ml-auto"
+        : "bg-white dark:bg-[#2D3748] border border-[#E8F4FC] dark:border-[#4A5568]"
       }`}
     >
-      <div className={`text-[10px] md:text-xs mb-1 uppercase font-bold flex items-center gap-1 md:gap-2 ${
-        isUser ? "text-white dark:text-white" : "text-[#5B4332] dark:text-gray-300"
+      <div className={`text-[10px] md:text-xs mb-2 uppercase font-bold flex items-center gap-1 md:gap-2 ${
+        isUser ? "text-white/90" : "text-[#7EB8D8] dark:text-[#6BA8C8]"
       }`}>
-        <span>{isUser ? "You" : "Kayra"}</span>
+        <span>{isUser ? "You" : "Kayra 🌳"}</span>
         {isStreaming && (
-          <span className="text-xs animate-pulse">●</span>
+          <span className="text-xs animate-pulse-soft">●</span>
         )}
         {!isUser && typeof totalTokens === "number" && totalTokens > 0 && (
-          <span className="ml-auto text-[10px] font-normal opacity-70 lowercase">
+          <span className="ml-auto text-[10px] font-normal opacity-60 lowercase">
             {totalTokens} tokens
           </span>
         )}
@@ -170,21 +237,21 @@ function MessageComponent({ message, aggregatedTokens, showTokens = true }: { me
       
       {/* Display text content with markdown formatting */}
       {visibleText && (
-        <div className="mb-2 prose prose-sm dark:prose-invert max-w-none">
+        <div className="mb-2 prose prose-sm max-w-none">
           <ReactMarkdown
             components={{
-              p: ({ children }) => <p className={`mb-2 leading-relaxed ${isUser ? 'text-gray-200' : 'text-[#4A3425]'} dark:text-gray-200`}>{children}</p>,
-              strong: ({ children }) => <strong className={`font-bold ${isUser ? 'text-white' : 'text-[#2D1B00]'} dark:text-white`}>{children}</strong>,
-              em: ({ children }) => <em className={`italic ${isUser ? 'text-gray-200' : 'text-[#4A3425]'} dark:text-gray-200`}>{children}</em>,
-              h1: ({ children }) => <h1 className={`text-xl font-bold mb-2 mt-3 ${isUser ? 'text-white' : 'text-[#2D1B00]'} dark:text-white`}>{children}</h1>,
-              h2: ({ children }) => <h2 className={`text-lg font-bold mb-2 mt-3 ${isUser ? 'text-white' : 'text-[#2D1B00]'} dark:text-white`}>{children}</h2>,
-              h3: ({ children }) => <h3 className={`text-base font-bold mb-2 mt-2 ${isUser ? 'text-white' : 'text-[#2D1B00]'} dark:text-white`}>{children}</h3>,
-              ul: ({ children }) => <ul className={`list-disc list-inside mb-2 space-y-1 ${isUser ? 'text-gray-200' : 'text-[#4A3425]'} dark:text-gray-200`}>{children}</ul>,
-              ol: ({ children }) => <ol className={`list-decimal list-inside mb-2 space-y-1 ${isUser ? 'text-gray-200' : 'text-[#4A3425]'} dark:text-gray-200`}>{children}</ol>,
+              p: ({ children }) => <p className={`mb-2 leading-relaxed ${isUser ? 'text-white' : 'text-[#4A5568] dark:text-[#E2E8F0]'}`}>{children}</p>,
+              strong: ({ children }) => <strong className={`font-bold ${isUser ? 'text-white' : 'text-[#2D3748] dark:text-white'}`}>{children}</strong>,
+              em: ({ children }) => <em className={`italic ${isUser ? 'text-white/90' : 'text-[#4A5568] dark:text-[#A0AEC0]'}`}>{children}</em>,
+              h1: ({ children }) => <h1 className={`text-xl font-bold mb-2 mt-3 ${isUser ? 'text-white' : 'text-[#2D3748] dark:text-white'}`}>{children}</h1>,
+              h2: ({ children }) => <h2 className={`text-lg font-bold mb-2 mt-3 ${isUser ? 'text-white' : 'text-[#2D3748] dark:text-white'}`}>{children}</h2>,
+              h3: ({ children }) => <h3 className={`text-base font-bold mb-2 mt-2 ${isUser ? 'text-white' : 'text-[#2D3748] dark:text-white'}`}>{children}</h3>,
+              ul: ({ children }) => <ul className={`list-disc list-inside mb-2 space-y-1 ${isUser ? 'text-white' : 'text-[#4A5568] dark:text-[#E2E8F0]'}`}>{children}</ul>,
+              ol: ({ children }) => <ol className={`list-decimal list-inside mb-2 space-y-1 ${isUser ? 'text-white' : 'text-[#4A5568] dark:text-[#E2E8F0]'}`}>{children}</ol>,
               li: ({ children }) => <li className="ml-2">{children}</li>,
-              code: ({ children }) => <code className={`px-1 py-0.5 rounded text-sm ${isUser ? 'bg-[#4A7C4E] text-gray-200' : 'bg-[#B5A58D] text-[#2D1B00]'} dark:bg-gray-800 dark:text-gray-200`}>{children}</code>,
-              pre: ({ children }) => <pre className={`p-2 rounded overflow-x-auto mb-2 ${isUser ? 'bg-[#4A7C4E] text-gray-200' : 'bg-[#B5A58D] text-[#2D1B00]'} dark:bg-gray-800 dark:text-gray-200`}>{children}</pre>,
-              blockquote: ({ children }) => <blockquote className={`border-l-4 pl-3 italic my-2 ${isUser ? 'border-white text-gray-200' : 'border-[#5A8A5E] text-[#4A3425]'} dark:border-gray-600 dark:text-gray-300`}>{children}</blockquote>,
+              code: ({ children }) => <code className={`px-1.5 py-0.5 rounded-lg text-sm ${isUser ? 'bg-white/20 text-white' : 'bg-[#F0E6FA] dark:bg-[#4A5568] text-[#8B7EC8] dark:text-[#D4B8E8]'}`}>{children}</code>,
+              pre: ({ children }) => <pre className={`p-3 rounded-xl overflow-x-auto mb-2 ${isUser ? 'bg-white/20 text-white' : 'bg-[#F8F9FA] dark:bg-[#1A202C] text-[#4A5568] dark:text-[#E2E8F0]'}`}>{children}</pre>,
+              blockquote: ({ children }) => <blockquote className={`border-l-4 pl-3 italic my-2 ${isUser ? 'border-white/50 text-white/90' : 'border-[#D4B8E8] dark:border-[#A888C8] text-[#718096] dark:text-[#A0AEC0]'}`}>{children}</blockquote>,
             }}
           >
             {visibleText}
@@ -222,36 +289,36 @@ function MessageComponent({ message, aggregatedTokens, showTokens = true }: { me
             const args = (toolAny.args || toolAny.input || toolAny.arguments || {}) as { path?: string; content?: string; [key: string]: unknown };
             
             return (
-              <div key={idx} className="bg-[#B5A58D] dark:bg-gray-800 rounded text-xs border border-[#9A8A70] dark:border-gray-700 overflow-hidden">
+              <div key={idx} className="bg-[#F8F9FA] dark:bg-[#1A202C] rounded-xl text-xs border border-[#E8F4FC] dark:border-[#4A5568] overflow-hidden">
                 <button
                   onClick={() => toggleTool(idx)}
-                  className="w-full p-3 text-left hover:bg-[#A59580] dark:hover:bg-gray-700 transition-colors flex items-center justify-between gap-2"
+                  className="w-full p-3 text-left hover:bg-[#F0E6FA]/50 dark:hover:bg-[#4A5568]/50 transition-colors flex items-center justify-between gap-2"
                 >
-                  <div className="text-[#5A8A5E] dark:text-blue-300 font-mono font-bold flex items-center gap-2">
+                  <div className="text-[#8B7EC8] dark:text-[#D4B8E8] font-mono font-bold flex items-center gap-2 min-w-0">
                     {isFileOperation ? '📝' : '🔧'} {toolName}
-                    {/* Show path for file operations */}
+                    {/* Show path for file operations - hidden on mobile */}
                     {args.path && (
-                      <span className="font-normal text-[#4A3425] dark:text-gray-400 truncate max-w-[200px]">
+                      <span className="hidden md:inline font-normal text-[#718096] dark:text-[#A0AEC0] truncate max-w-[200px]">
                         {args.path}
                       </span>
                     )}
                   </div>
-                  <div className={`text-[#5A8A5E] dark:text-blue-300 transition-transform duration-200 ${isExpanded ? 'rotate-90' : 'rotate-0'}`}>
+                  <div className={`text-[#D4B8E8] dark:text-[#A888C8] transition-transform duration-200 ${isExpanded ? 'rotate-90' : 'rotate-0'}`}>
                     ▶
                   </div>
                 </button>
                 {isExpanded && (
-                  <div className="border-t border-[#9A8A70] dark:border-gray-700 bg-[#2D1B00]/5 dark:bg-black/30 p-3 space-y-3">
+                  <div className="border-t border-[#E8F4FC] dark:border-[#4A5568] bg-[#FAFBFC] dark:bg-[#2D3748] p-3 space-y-3">
                     {/* For writeFile, show path, line count, and full content */}
                     {isWriteFile && args.content && (
                       <div>
-                        <div className="text-xs text-[#5A8A5E] dark:text-green-400 mb-2">
+                        <div className="text-xs text-[#7EC8A8] dark:text-[#88C8A8] mb-2">
                           ✅ Written to {args.path || 'file'}
                           <br />
                           📊 {args.content.split('\n').length} lines
                         </div>
-                        <div className="text-xs font-bold text-[#5A8A5E] dark:text-blue-300 mb-1">Full Code:</div>
-                        <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed bg-[#2D1B00]/10 dark:bg-black/20 p-2 rounded">
+                        <div className="text-xs font-bold text-[#8B7EC8] dark:text-[#D4B8E8] mb-1">Full Code:</div>
+                        <pre className="text-[#4A5568] dark:text-[#E2E8F0] whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed bg-white dark:bg-[#1A202C] p-3 rounded-xl border border-[#E8F4FC] dark:border-[#4A5568]">
                           {args.content}
                         </pre>
                       </div>
@@ -288,13 +355,13 @@ function MessageComponent({ message, aggregatedTokens, showTokens = true }: { me
                           const lineCount = fullContent.split('\n').length;
                           return (
                             <div>
-                              <div className="text-xs text-[#5A8A5E] dark:text-green-400 mb-2">
+                              <div className="text-xs text-[#7EC8A8] dark:text-[#88C8A8] mb-2">
                                 ✅ Read from {filePath || 'file'}
                                 <br />
                                 📊 {lineCount} lines
                               </div>
-                              <div className="text-xs font-bold text-[#5A8A5E] dark:text-blue-300 mb-1">File Content:</div>
-                              <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed bg-[#2D1B00]/10 dark:bg-black/20 p-2 rounded">
+                              <div className="text-xs font-bold text-[#8B7EC8] dark:text-[#D4B8E8] mb-1">File Content:</div>
+                              <pre className="text-[#4A5568] dark:text-[#E2E8F0] whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed bg-white dark:bg-[#1A202C] p-3 rounded-xl border border-[#E8F4FC] dark:border-[#4A5568]">
                                 {fullContent}
                               </pre>
                             </div>
@@ -310,8 +377,8 @@ function MessageComponent({ message, aggregatedTokens, showTokens = true }: { me
                       // For other tools, show full output
                       return (
                         <div>
-                          <div className="text-xs font-bold text-[#5A8A5E] dark:text-blue-300 mb-1">Output:</div>
-                          <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed">
+                          <div className="text-xs font-bold text-[#8B7EC8] dark:text-[#D4B8E8] mb-1">Output:</div>
+                          <pre className="text-[#4A5568] dark:text-[#E2E8F0] whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed">
                             {outputStr}
                           </pre>
                         </div>
@@ -331,6 +398,7 @@ function MessageComponent({ message, aggregatedTokens, showTokens = true }: { me
 export default function Home() {
   const { isSignedIn, isLoaded } = useUser();
   const router = useRouter();
+  const { theme, toggleTheme, mounted } = useTheme();
   const [input, setInput] = useState("");
   const [selectedChatId, setSelectedChatId] = useState<Id<"chats"> | null>(null);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
@@ -417,6 +485,14 @@ export default function Home() {
   // Auto-select the first chat when chats are loaded and none is selected
   const firstChatId = chats.length > 0 ? chats[0]._id : null;
   const hasRestoredChat = useRef(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Auto-scroll to bottom when messages change or chat is selected
+  useEffect(() => {
+    if (messagesEndRef.current && messages.length > 0) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages.length, selectedChatId]);
   
   // Show toast notification
   const showToast = (message: string, type: "error" | "success" | "info" = "info") => {
@@ -510,10 +586,10 @@ export default function Home() {
   // Show loading state while checking auth
   if (!isLoaded) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#E8DCC8] dark:bg-gray-900">
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-[#F0E6FA] via-[#FAFBFC] to-[#E8F4FC]">
         <div className="text-center">
-          <div className="text-6xl mb-4 animate-pulse">🌳</div>
-          <p className="text-[#5B4332] dark:text-gray-400">Loading...</p>
+          <div className="text-6xl mb-4 animate-float">🌳</div>
+          <p className="text-[#718096]">Loading...</p>
         </div>
       </div>
     );
@@ -748,26 +824,87 @@ export default function Home() {
   };
 
   return (
-    <main className="flex flex-col h-screen bg-[#E8DCC8] dark:bg-gray-900 text-[#4A3425] dark:text-white">
+    <main className="flex flex-col h-[100dvh] md:h-screen bg-gradient-to-br from-[#FAFBFC] via-white to-[#F8F9FA] dark:from-[#1A202C] dark:via-[#1A202C] dark:to-[#2D3748] text-[#4A5568] dark:text-[#E2E8F0]">
       {/* Top Bar with Brand, Chat Selector, Preview Title, and User */}
-      <div className="min-h-16 px-3 md:px-4 py-2 md:py-0 border-b border-[#B5A58D] dark:border-gray-700 flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4">
-        {/* Left: Brand + Chat Controls */}
-        <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
+      <div className="flex-shrink-0 px-4 md:px-6 py-3 md:py-0 border-b border-[#E8F4FC] dark:border-[#4A5568] bg-white/80 dark:bg-[#2D3748]/80 backdrop-blur-sm flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4">
+        {/* Mobile: Row 1 - Logo + Theme/Settings/Account */}
+        <div className="flex items-center justify-between md:hidden">
+          <div className="flex items-center gap-2">
+            <div className="text-xl font-bold bg-gradient-to-r from-[#8B7EC8] via-[#7EB8D8] to-[#7EC8A8] bg-clip-text text-transparent">
+              Kayra
+            </div>
+            <div className="text-xl">🌳</div>
+          </div>
+          <div className="flex items-center gap-2">
+            {mounted && <ThemeToggle theme={theme} onToggle={toggleTheme} />}
+            <button
+              onClick={() => router.push("/settings")}
+              className="w-8 h-8 rounded-full font-bold bg-[#F8F9FA] dark:bg-[#1A202C] hover:bg-[#E8F4FC] dark:hover:bg-[#4A5568] text-[#718096] dark:text-[#A0AEC0] transition-all flex items-center justify-center"
+            >
+              ⚙️
+            </button>
+            <UserButton />
+          </div>
+        </div>
+        
+        {/* Mobile: Row 2 - Chat selector + action buttons */}
+        <div className="flex items-center gap-2 md:hidden">
+          <select
+            value={selectedChatId || ""}
+            onChange={(e) => setSelectedChatId(e.target.value as Id<"chats">)}
+            className="bg-[#F8F9FA] dark:bg-[#1A202C] border border-[#E8F4FC] dark:border-[#4A5568] rounded-xl px-3 py-2 text-xs text-[#4A5568] dark:text-[#E2E8F0] focus:outline-none focus:border-[#A8D4E6] dark:focus:border-[#6BA8C8] focus:ring-2 focus:ring-[#A8D4E6]/20 dark:focus:ring-[#6BA8C8]/20 flex-1 min-w-0 font-medium truncate transition-all"
+          >
+            {chats.map((chat) => (
+              <option key={chat._id} value={chat._id}>
+                {chat.name}
+              </option>
+            ))}
+          </select>
+          {selectedChatId && (
+            <button
+              onClick={() => handleDeleteChat(selectedChatId)}
+              className="bg-[#F0B8C4] hover:bg-[#E8A8B4] dark:bg-[#9A8ABC] dark:hover:bg-[#AA9ACC] px-3 py-2 rounded-xl text-xs text-white flex-shrink-0 transition-all hover:shadow-md"
+              title="Delete chat"
+            >
+              🗑️
+            </button>
+          )}
+          {selectedChat?.repoId && selectedChat.repoId !== "pending" && hasCommitted && (
+            <button
+              onClick={handleDownloadProject}
+              disabled={isDownloading}
+              className="bg-[#A8D4E6] hover:bg-[#98C4D6] dark:bg-[#7EB5D6] dark:hover:bg-[#8EC5E6] disabled:bg-[#E2E8F0] dark:disabled:bg-[#4A5568] disabled:cursor-not-allowed px-3 py-2 rounded-xl text-xs text-white flex-shrink-0 transition-all hover:shadow-md"
+              title="Download project as zip"
+            >
+              {isDownloading ? "..." : "⬇️"}
+            </button>
+          )}
+          <button
+            onClick={handleCreateChat}
+            disabled={isCreatingChat}
+            className="bg-gradient-to-r from-[#B8E8C8] to-[#98D8B8] dark:from-[#6BB8C8] dark:to-[#5BA8B8] hover:from-[#A8D8B8] hover:to-[#88C8A8] dark:hover:from-[#7BC8D8] dark:hover:to-[#6BB8C8] disabled:from-[#E2E8F0] disabled:to-[#E2E8F0] dark:disabled:from-[#4A5568] dark:disabled:to-[#4A5568] disabled:cursor-not-allowed px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap text-white flex-shrink-0 transition-all hover:shadow-md"
+          >
+            {isCreatingChat ? "..." : "+ New"}
+          </button>
+        </div>
+
+        {/* Desktop: Left - Brand + Chat Controls */}
+        <div className="hidden md:flex items-center gap-5 flex-1 min-w-0">
           <div className="flex flex-col leading-tight flex-shrink-0">
-            <div className="flex items-center gap-1 md:gap-2">
-              <div className="text-xl md:text-2xl font-bold bg-gradient-to-r from-[#2D1B00] via-[#5B4332] to-[#5A8A5E] dark:from-blue-400 dark:via-purple-400 dark:to-purple-500 bg-clip-text text-transparent">
+            <div className="flex items-center gap-2">
+              <div className="text-2xl font-bold bg-gradient-to-r from-[#8B7EC8] via-[#7EB8D8] to-[#7EC8A8] bg-clip-text text-transparent">
                 Kayra
               </div>
-              <div className="text-xl md:text-2xl opacity-90 dark:opacity-70">🌳</div>
+              <div className="text-2xl">🌳</div>
             </div>
-            <div className="text-[10px] md:text-xs text-[#5B4332] dark:text-gray-400 font-medium hidden sm:block">the Game Creator</div>
+            <div className="text-xs text-[#A0AEC0] dark:text-[#718096] font-medium">the Game Creator</div>
           </div>
           
-          <div className="flex items-center gap-1 md:gap-2 flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
             <select
               value={selectedChatId || ""}
               onChange={(e) => setSelectedChatId(e.target.value as Id<"chats">)}
-              className="bg-[#F5EFE3] dark:bg-gray-800 border border-[#B5A58D] dark:border-gray-600 rounded px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm text-[#2D1B00] dark:text-white focus:outline-none focus:border-[#5A8A5E] dark:focus:border-blue-500 flex-1 min-w-0 font-medium truncate"
+              className="bg-[#F8F9FA] dark:bg-[#1A202C] border border-[#E8F4FC] dark:border-[#4A5568] rounded-xl px-4 py-2 text-sm text-[#4A5568] dark:text-[#E2E8F0] focus:outline-none focus:border-[#A8D4E6] dark:focus:border-[#6BA8C8] focus:ring-2 focus:ring-[#A8D4E6]/20 dark:focus:ring-[#6BA8C8]/20 flex-1 min-w-0 font-medium truncate transition-all"
             >
               {chats.map((chat) => (
                 <option key={chat._id} value={chat._id}>
@@ -778,7 +915,7 @@ export default function Home() {
             {selectedChatId && (
               <button
                 onClick={() => handleDeleteChat(selectedChatId)}
-                className="bg-[#A85842] dark:bg-red-700 hover:bg-[#8B4332] dark:hover:bg-red-900 px-2 md:px-3 py-1.5 md:py-2 rounded text-xs md:text-sm text-white flex-shrink-0"
+                className="bg-[#F0B8C4] hover:bg-[#E8A8B4] dark:bg-[#9A8ABC] dark:hover:bg-[#AA9ACC] px-3 py-2 rounded-xl text-sm text-white flex-shrink-0 transition-all hover:shadow-md"
                 title="Delete chat"
               >
                 🗑️
@@ -788,7 +925,7 @@ export default function Home() {
               <button
                 onClick={handleDownloadProject}
                 disabled={isDownloading}
-                className="bg-[#6B8E8B] dark:bg-teal-700 hover:bg-[#5A7D7A] dark:hover:bg-teal-800 disabled:bg-[#C4B599] dark:disabled:bg-gray-700 disabled:cursor-not-allowed px-2 md:px-3 py-1.5 md:py-2 rounded text-xs md:text-sm text-white flex-shrink-0"
+                className="bg-[#A8D4E6] hover:bg-[#98C4D6] dark:bg-[#7EB5D6] dark:hover:bg-[#8EC5E6] disabled:bg-[#E2E8F0] dark:disabled:bg-[#4A5568] disabled:cursor-not-allowed px-3 py-2 rounded-xl text-sm text-white flex-shrink-0 transition-all hover:shadow-md"
                 title="Download project as zip"
               >
                 {isDownloading ? "..." : "⬇️"}
@@ -797,31 +934,31 @@ export default function Home() {
             <button
               onClick={handleCreateChat}
               disabled={isCreatingChat}
-              className="bg-[#5A8A5E] dark:bg-green-600 hover:bg-[#4A7C4E] dark:hover:bg-green-700 disabled:bg-[#C4B599] dark:disabled:bg-gray-700 disabled:cursor-not-allowed px-2 md:px-3 py-1.5 md:py-2 rounded text-xs md:text-sm font-bold whitespace-nowrap text-white flex-shrink-0"
+              className="bg-gradient-to-r from-[#B8E8C8] to-[#98D8B8] dark:from-[#6BB8C8] dark:to-[#5BA8B8] hover:from-[#A8D8B8] hover:to-[#88C8A8] dark:hover:from-[#7BC8D8] dark:hover:to-[#6BB8C8] disabled:from-[#E2E8F0] disabled:to-[#E2E8F0] dark:disabled:from-[#4A5568] dark:disabled:to-[#4A5568] disabled:cursor-not-allowed px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap text-white flex-shrink-0 transition-all hover:shadow-md"
             >
               {isCreatingChat ? "..." : "+ New"}
             </button>
           </div>
         </div>
         
-        {/* Right: User Menu (Preview Title hidden on mobile) */}
-        <div className="flex items-center gap-2 md:gap-4 justify-between md:justify-end">
+        {/* Desktop: Right - User Menu */}
+        <div className="hidden md:flex items-center gap-4 justify-end">
           <div className="hidden lg:flex items-center gap-2">
-            <span className="text-lg font-bold text-[#2D1B00] dark:text-white">Live Preview</span>
+            <span className="text-lg font-bold text-[#4A5568] dark:text-[#E2E8F0]">Live Preview</span>
             <span className="text-xl">🎮</span>
           </div>
           
-          <div className="hidden lg:block h-8 w-px bg-[#C4B599] dark:bg-gray-700"></div>
+          <div className="hidden lg:block h-8 w-px bg-[#E8F4FC] dark:bg-[#4A5568]"></div>
           
-          <div className="flex items-center gap-1.5 md:gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
             {/* Free user message counter */}
             {remainingMessages?.isFreeUser && remainingMessages.remainingMessages !== null && (
-              <div className={`text-[10px] md:text-xs px-2 md:px-3 py-1 rounded font-bold ${
+              <div className={`text-[10px] md:text-xs px-3 py-1.5 rounded-full font-bold transition-all ${
                 remainingMessages.remainingMessages === 0
-                  ? "bg-[#A85842] dark:bg-red-700 text-white"
+                  ? "bg-[#F0B8C4] dark:bg-[#C86B7A] text-white"
                   : remainingMessages.remainingMessages <= 2
-                  ? "bg-[#D4A574] dark:bg-yellow-600 text-white"
-                  : "bg-[#D4C5A9] dark:bg-gray-700 text-[#3D2817] dark:text-gray-300"
+                  ? "bg-[#F8D4B8] dark:bg-[#B8944A] text-[#8B6914] dark:text-white"
+                  : "bg-[#E8F8F0] dark:bg-[#2D4A3A] text-[#7EC8A8] dark:text-[#88C8A8]"
               }`}>
                 {remainingMessages.remainingMessages}/{remainingMessages.totalDailyLimit} free
               </div>
@@ -829,9 +966,9 @@ export default function Home() {
             {/* Tier indicator (details & actions live in Settings) */}
             {billingStatus && (
               <div className="hidden sm:flex items-center gap-2">
-                <div className="text-[10px] md:text-xs px-2 md:px-3 py-1 rounded font-bold bg-[#D4C5A9] dark:bg-gray-700 text-[#3D2817] dark:text-gray-300">
+                <div className="text-[10px] md:text-xs px-3 py-1.5 rounded-full font-bold bg-[#F0E6FA] dark:bg-[#3D3058] text-[#8B7EC8] dark:text-[#D4B8E8]">
                   {billingStatus.tier === "pro"
-                    ? "Pro"
+                    ? "Pro ✨"
                     : billingStatus.tier === "byok"
                     ? "BYOK"
                     : billingStatus.tier === "admin"
@@ -839,19 +976,19 @@ export default function Home() {
                     : "Free"}
                   {billingStatus.pro?.isActive &&
                     typeof billingStatus.pro.remainingTokens === "number" && (
-                      <span className="ml-1 md:ml-2 font-normal hidden md:inline">
+                      <span className="ml-2 font-normal hidden md:inline">
                         · {Math.floor(billingStatus.pro.remainingTokens / 1_000_000)}M left
                       </span>
                     )}
                 </div>
               </div>
             )}
+            {mounted && <ThemeToggle theme={theme} onToggle={toggleTheme} />}
             <button
               onClick={() => router.push("/settings")}
-              className="text-[10px] md:text-xs px-2 md:px-3 py-1 rounded font-bold bg-[#D4C5A9] dark:bg-gray-700 hover:bg-[#C4B599] dark:hover:bg-gray-600 text-[#3D2817] dark:text-gray-300"
+              className="text-xs px-3 py-1.5 rounded-full font-bold bg-[#F8F9FA] dark:bg-[#1A202C] hover:bg-[#E8F4FC] dark:hover:bg-[#4A5568] text-[#718096] dark:text-[#A0AEC0] transition-all"
             >
-              <span className="hidden sm:inline">Settings</span>
-              <span className="sm:hidden">⚙️</span>
+              Settings
             </button>
             <UserButton />
           </div>
@@ -860,24 +997,24 @@ export default function Home() {
 
       {/* API Key Modal */}
       {showApiKeyModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#F5EFE3] dark:bg-gray-800 rounded-lg p-4 md:p-6 max-w-md w-full">
-            <h2 className="text-lg md:text-xl font-bold mb-2 text-[#2D1B00] dark:text-white">
+        <div className="fixed inset-0 bg-[#4A5568]/30 dark:bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-[#2D3748] rounded-3xl p-6 md:p-8 max-w-md w-full shadow-[0_16px_64px_rgba(168,162,158,0.2)] dark:shadow-[0_16px_64px_rgba(0,0,0,0.4)] animate-fade-in-scale">
+            <h2 className="text-xl md:text-2xl font-bold mb-3 text-[#4A5568] dark:text-[#E2E8F0]">
               {apiKeyStatus?.hasKey ? "Update" : "Add"} OpenAI API Key
             </h2>
-            <p className="text-xs md:text-sm text-[#4A3425] dark:text-gray-400 mb-4">
+            <p className="text-sm text-[#718096] dark:text-[#A0AEC0] mb-5">
               Your API key is used to power Kayra&apos;s AI. Get one at{" "}
               <a
                 href="https://platform.openai.com/api-keys"
                 target="_blank"
-                className="text-[#5A8A5E] dark:text-blue-400 underline font-bold"
+                className="text-[#7EB8D8] dark:text-[#6BA8C8] font-bold hover:text-[#6EA8C8] dark:hover:text-[#5B98B8] transition-colors"
               >
                 openai.com
               </a>
             </p>
             
-            <div className="bg-[#E8F5E9] dark:bg-blue-900/20 border border-[#5A8A5E] dark:border-blue-700 rounded p-3 mb-4">
-              <p className="text-xs text-[#3D5A3F] dark:text-blue-300">
+            <div className="bg-gradient-to-r from-[#E8F8F0] to-[#E8F4FC] dark:from-[#2D4A3A] dark:to-[#2A3A4A] border border-[#B8E8C8] dark:border-[#4A5568] rounded-2xl p-4 mb-5">
+              <p className="text-xs text-[#718096] dark:text-[#A0AEC0]">
                 🔐 Your API key is encrypted and stored securely. We only decrypt it when making AI requests on your behalf. Like all BYOK services, we technically have access to your key—only use services you trust.
               </p>
             </div>
@@ -889,24 +1026,24 @@ export default function Home() {
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="sk-..."
-                  className="flex-1 bg-white dark:bg-gray-700 border border-[#B5A58D] dark:border-gray-600 rounded px-4 py-2 text-[#2D1B00] dark:text-white focus:outline-none focus:border-[#5A8A5E] dark:focus:border-blue-500"
+                  className="flex-1 bg-[#F8F9FA] dark:bg-[#1A202C] border border-[#E8F4FC] dark:border-[#4A5568] rounded-xl px-4 py-3 text-[#4A5568] dark:text-[#E2E8F0] focus:outline-none focus:border-[#A8D4E6] dark:focus:border-[#6BA8C8] focus:ring-2 focus:ring-[#A8D4E6]/20 dark:focus:ring-[#6BA8C8]/20 transition-all"
                   autoFocus
                 />
                 <button
                   onClick={() => setShowKey(!showKey)}
-                  className="px-4 py-2 bg-[#D4C5A9] dark:bg-gray-700 hover:bg-[#C4B599] dark:hover:bg-gray-600 rounded text-[#2D1B00] dark:text-white"
+                  className="px-4 py-3 bg-[#F8F9FA] dark:bg-[#1A202C] hover:bg-[#E8F4FC] dark:hover:bg-[#4A5568] rounded-xl text-[#718096] dark:text-[#A0AEC0] transition-all"
                 >
                   {showKey ? "👁️" : "👁️‍🗨️"}
                 </button>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex gap-3">
                 <button
                   onClick={() => {
                     setShowApiKeyModal(false);
                     setApiKey("");
                   }}
-                  className="flex-1 bg-[#D4C5A9] dark:bg-gray-700 hover:bg-[#C4B599] dark:hover:bg-gray-600 px-4 py-2 rounded text-[#2D1B00] dark:text-white font-medium"
+                  className="flex-1 bg-[#F8F9FA] dark:bg-[#1A202C] hover:bg-[#E8F4FC] dark:hover:bg-[#4A5568] px-4 py-3 rounded-xl text-[#718096] dark:text-[#A0AEC0] font-medium transition-all"
                 >
                   Cancel
                 </button>
@@ -914,7 +1051,7 @@ export default function Home() {
                   <button
                     onClick={handleDeleteApiKey}
                     disabled={savingKey}
-                    className="flex-1 bg-[#A85842] dark:bg-gray-600 hover:bg-[#8B4332] dark:hover:bg-gray-500 disabled:bg-[#C4B599] dark:disabled:bg-gray-700 disabled:cursor-not-allowed px-4 py-2 rounded text-white"
+                    className="flex-1 bg-[#F0B8C4] hover:bg-[#E8A8B4] dark:bg-[#C86B7A] dark:hover:bg-[#B85A6A] disabled:bg-[#E2E8F0] dark:disabled:bg-[#4A5568] disabled:cursor-not-allowed px-4 py-3 rounded-xl text-white font-medium transition-all"
                   >
                     Delete Key
                   </button>
@@ -922,7 +1059,7 @@ export default function Home() {
                 <button
                   onClick={handleSaveApiKey}
                   disabled={!apiKey.trim() || savingKey}
-                  className="flex-1 bg-[#5A8A5E] dark:bg-blue-600 hover:bg-[#4A7C4E] dark:hover:bg-blue-700 disabled:bg-[#C4B599] dark:disabled:bg-gray-700 disabled:cursor-not-allowed px-4 py-2 rounded font-bold text-white"
+                  className="flex-1 bg-gradient-to-r from-[#A8D4E6] to-[#88C4D6] dark:from-[#6BA8C8] dark:to-[#5B98B8] hover:from-[#98C4D6] hover:to-[#78B4C6] disabled:from-[#E2E8F0] disabled:to-[#E2E8F0] dark:disabled:from-[#4A5568] dark:disabled:to-[#4A5568] disabled:cursor-not-allowed px-4 py-3 rounded-xl font-bold text-white transition-all"
                 >
                   {savingKey ? "Saving..." : "Save"}
                 </button>
@@ -933,23 +1070,23 @@ export default function Home() {
       )}
 
       {/* Mobile Tab Switcher */}
-      <div className="md:hidden flex border-b border-[#B5A58D] dark:border-gray-700">
+      <div className="md:hidden flex flex-shrink-0 border-b border-[#E8F4FC] dark:border-[#4A5568] bg-white dark:bg-[#2D3748]">
         <button
           onClick={() => setMobileView("chat")}
-          className={`flex-1 py-2.5 text-sm font-bold transition-colors flex items-center justify-center gap-2 ${
+          className={`flex-1 py-3 text-sm font-bold transition-all flex items-center justify-center gap-2 ${
             mobileView === "chat"
-              ? "bg-[#5A8A5E] dark:bg-blue-600 text-white"
-              : "bg-[#F5EFE3] dark:bg-gray-800 text-[#5B4332] dark:text-gray-400"
+              ? "bg-gradient-to-r from-[#A8D4E6] to-[#88C4D6] dark:from-[#6BA8C8] dark:to-[#5B98B8] text-white"
+              : "bg-[#F8F9FA] dark:bg-[#1A202C] text-[#718096] dark:text-[#A0AEC0]"
           }`}
         >
           <span>💬</span> Chat
         </button>
         <button
           onClick={() => setMobileView("preview")}
-          className={`flex-1 py-2.5 text-sm font-bold transition-colors flex items-center justify-center gap-2 ${
+          className={`flex-1 py-3 text-sm font-bold transition-all flex items-center justify-center gap-2 ${
             mobileView === "preview"
-              ? "bg-[#5A8A5E] dark:bg-blue-600 text-white"
-              : "bg-[#F5EFE3] dark:bg-gray-800 text-[#5B4332] dark:text-gray-400"
+              ? "bg-gradient-to-r from-[#A8D4E6] to-[#88C4D6] dark:from-[#6BA8C8] dark:to-[#5B98B8] text-white"
+              : "bg-[#F8F9FA] dark:bg-[#1A202C] text-[#718096] dark:text-[#A0AEC0]"
           }`}
         >
           <span>🎮</span> Preview
@@ -957,19 +1094,19 @@ export default function Home() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+      <div className="flex flex-col md:flex-row flex-1 min-h-0">
         {/* Chat Panel - fullscreen on mobile when selected, 50% on desktop */}
-        <div className={`w-full md:w-1/2 flex-1 md:flex-none md:h-full flex flex-col md:border-r border-[#B5A58D] dark:border-gray-700 overflow-hidden ${
-          mobileView === "chat" ? "flex" : "hidden md:flex"
+        <div className={`w-full md:w-1/2 md:flex-none flex flex-col md:border-r border-[#E8F4FC] dark:border-[#4A5568] bg-gradient-to-b from-[#F0E6FA]/30 dark:from-[#3D3058]/30 via-white dark:via-[#1A202C] to-white dark:to-[#1A202C] overflow-hidden ${
+          mobileView === "chat" ? "flex flex-1" : "hidden md:flex md:h-full"
         }`}>
 
         {/* Messages */}
-        <div className="flex-1 p-3 md:p-6 overflow-y-auto overflow-x-hidden space-y-3 md:space-y-4 min-h-0">
+        <div className="flex-1 p-4 md:p-6 overflow-y-auto overflow-x-hidden space-y-4 min-h-0">
           {selectedChat?.repoId === "pending" ? (
-            <div className="text-center text-[#5A8A5E] dark:text-blue-500 mt-8 text-sm animate-pulse">
-              <div className="text-2xl mb-2">⚙️</div>
-              Setting up your 3D game project...
-              <div className="mt-2 text-xs text-[#6B5844] dark:text-gray-400">
+            <div className="text-center text-[#7EB8D8] dark:text-[#6BA8C8] mt-8 text-sm animate-pulse-soft">
+              <div className="text-3xl mb-3">⚙️</div>
+              <div className="font-medium text-[#4A5568] dark:text-[#E2E8F0]">Setting up your 3D game project...</div>
+              <div className="mt-2 text-xs text-[#A0AEC0]">
                 Creating Git repository and dev server
               </div>
             </div>
@@ -1014,27 +1151,29 @@ export default function Home() {
                 );
               })
             ) : (
-              <div className="text-center text-[#5B4332] dark:text-gray-500 mt-4 md:mt-8 text-xs md:text-sm">
-                <div className="text-2xl md:text-3xl mb-2 md:mb-3">👋</div>
-                <div className="text-base md:text-lg font-bold text-[#2D1B00] dark:text-white mb-1 md:mb-2">Hi! I&apos;m Kayra</div>
-                <div className="mb-2 md:mb-4 text-[#4A3425] dark:text-gray-300 text-xs md:text-sm">Tell me what kind of 3D game you want to create!</div>
-                <div className="mt-2 md:mt-4 text-[10px] md:text-xs text-[#6B5844] dark:text-gray-600">
+              <div className="text-center text-[#718096] dark:text-[#A0AEC0] mt-6 md:mt-10 animate-fade-in">
+                <div className="text-4xl md:text-5xl mb-4 animate-float">👋</div>
+                <div className="text-xl md:text-2xl font-bold text-[#4A5568] dark:text-[#E2E8F0] mb-2">Hi! I&apos;m Kayra</div>
+                <div className="mb-4 text-[#718096] dark:text-[#A0AEC0] text-sm md:text-base">Tell me what kind of 3D game you want to create!</div>
+                <div className="mt-6 text-xs text-[#A0AEC0] dark:text-[#718096] bg-[#F8F9FA] dark:bg-[#2D3748] inline-block px-4 py-2 rounded-full">
                   Try: &quot;Make a flappy bird game&quot; or &quot;Create a racing game&quot;
                 </div>
               </div>
             )
           ) : (
-            <div className="text-center text-[#5B4332] dark:text-gray-500 mt-8 text-sm">
+            <div className="text-center text-[#718096] dark:text-[#A0AEC0] mt-8 text-sm">
               {chats.length === 0 
                 ? "Start typing below to create your first 3D game!"
                 : "Select a project to continue"}
             </div>
           )}
+          {/* Scroll anchor */}
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Input form */}
-        <form onSubmit={handleSend} className="p-3 md:p-6 border-t border-[#B5A58D] dark:border-gray-700">
-          <div className="flex gap-2 items-end">
+        <form onSubmit={handleSend} className="flex-shrink-0 p-4 md:p-6 border-t border-[#E8F4FC] dark:border-[#4A5568] bg-white dark:bg-[#2D3748]">
+          <div className="flex gap-3 items-end">
             <textarea 
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -1053,18 +1192,18 @@ export default function Home() {
               }
               disabled={selectedChat?.repoId === "pending" || isCurrentChatProcessing || isSending}
               rows={1}
-              className="flex-1 bg-[#F5EFE3] dark:bg-gray-800 border border-[#B5A58D] dark:border-gray-600 text-[#2D1B00] dark:text-white rounded p-2 text-xs md:text-sm focus:outline-none focus:border-[#5A8A5E] dark:focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed placeholder-[#8B7A65] dark:placeholder-gray-500 resize-none overflow-y-auto overflow-x-hidden"
+              className="flex-1 bg-[#F8F9FA] dark:bg-[#1A202C] border border-[#E8F4FC] dark:border-[#4A5568] text-[#4A5568] dark:text-[#E2E8F0] rounded-2xl p-3 text-sm focus:outline-none focus:border-[#A8D4E6] dark:focus:border-[#6BA8C8] focus:ring-2 focus:ring-[#A8D4E6]/20 dark:focus:ring-[#6BA8C8]/20 disabled:opacity-50 disabled:cursor-not-allowed placeholder-[#A0AEC0] dark:placeholder-[#718096] resize-none overflow-y-auto overflow-x-hidden transition-all"
             />
             <button
               type="submit"
               disabled={selectedChat?.repoId === "pending" || isCurrentChatProcessing || isSending}
-              className="bg-[#5A8A5E] dark:bg-blue-500 hover:bg-[#4A7C4E] dark:hover:bg-blue-600 disabled:bg-[#C4B599] dark:disabled:bg-gray-700 disabled:cursor-not-allowed px-3 md:px-4 py-2 rounded font-bold text-xs md:text-sm text-white min-w-[60px] md:min-w-[70px]"
+              className="bg-gradient-to-r from-[#A8D4E6] to-[#88C4D6] dark:from-[#6BA8C8] dark:to-[#5B98B8] hover:from-[#98C4D6] hover:to-[#78B4C6] disabled:from-[#E2E8F0] disabled:to-[#E2E8F0] dark:disabled:from-[#4A5568] dark:disabled:to-[#4A5568] disabled:cursor-not-allowed px-5 py-3 rounded-2xl font-bold text-sm text-white min-w-[70px] transition-all hover:shadow-md"
             >
               {(isCurrentChatProcessing || isSending) ? (
                 <span className="dot-pulse">
-                  <span>.</span>
-                  <span>.</span>
-                  <span>.</span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
                 </span>
               ) : (
                 "Send"
@@ -1075,18 +1214,18 @@ export default function Home() {
       </div>
 
       {/* Preview Panel - fullscreen on mobile when selected, 50% on desktop */}
-      <div className={`w-full md:w-1/2 flex-1 md:flex-none md:h-full flex flex-col overflow-hidden ${
-        mobileView === "preview" ? "flex" : "hidden md:flex"
+      <div className={`w-full md:w-1/2 md:flex-none flex flex-col overflow-hidden ${
+        mobileView === "preview" ? "flex flex-1" : "hidden md:flex md:h-full"
       }`}>
-        <div className="flex-1 bg-[#D4C5A9] dark:bg-gray-950 p-3 md:p-6 flex items-center justify-center">
+        <div className="flex-1 bg-gradient-to-br from-[#F8F9FA] to-[#E8F4FC] dark:from-[#1A202C] dark:to-[#2D3748] p-4 md:p-6 flex items-center justify-center">
           {selectedChat?.repoId === "pending" ? (
-            <div className="text-[#5A8A5E] dark:text-blue-500 text-center animate-pulse">
-              <div className="text-4xl mb-4">⚙️</div>
-              <div className="text-sm text-[#2D1B00] dark:text-white font-medium">Setting up dev environment...</div>
-              <div className="text-xs text-[#5B4332] dark:text-gray-500 mt-2">This may take 30-60 seconds</div>
+            <div className="text-[#7EB8D8] dark:text-[#6BA8C8] text-center animate-pulse-soft">
+              <div className="text-5xl mb-4">⚙️</div>
+              <div className="text-base text-[#4A5568] dark:text-[#E2E8F0] font-medium">Setting up dev environment...</div>
+              <div className="text-sm text-[#A0AEC0] dark:text-[#718096] mt-2">This may take 30-60 seconds</div>
             </div>
           ) : selectedChat?.repoId && hasCommitted ? (
-            <div className="w-full h-full rounded-lg overflow-hidden border-2 border-[#8B7A65] dark:border-gray-700 shadow-2xl">
+            <div className="w-full h-full rounded-3xl overflow-hidden border-2 border-[#E8F4FC] dark:border-[#4A5568] shadow-[0_8px_32px_rgba(168,212,230,0.2)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
               <FreestyleDevServer 
                 key={`${selectedChat.repoId}-${commitCount}`}
                 actions={{ requestDevServer }} 
@@ -1094,9 +1233,9 @@ export default function Home() {
               />
             </div>
           ) : (
-            <div className="text-[#5B4332] dark:text-gray-600 text-center">
-              <div className="text-4xl mb-4">🎮</div>
-              <div className="text-sm">
+            <div className="text-[#A0AEC0] dark:text-[#718096] text-center">
+              <div className="text-5xl mb-4">🎮</div>
+              <div className="text-base">
                 {selectedChat?.repoId && messages.length > 0
                   ? "Kayra is designing your game..."
                   : selectedChat?.repoId 
@@ -1112,23 +1251,23 @@ export default function Home() {
       {/* Toast Notification */}
       {toast && (
         <div className="fixed bottom-4 left-4 right-4 md:bottom-6 md:right-6 md:left-auto z-50 animate-fade-in">
-          <div className={`rounded-lg shadow-lg p-3 md:p-4 max-w-md mx-auto md:mx-0 border-2 ${
+          <div className={`rounded-2xl shadow-lg p-4 max-w-md mx-auto md:mx-0 backdrop-blur-sm ${
             toast.type === "error" 
-              ? "bg-[#A85842] dark:bg-red-700 border-[#8B4332] dark:border-red-900 text-white"
+              ? "bg-[#F0B8C4] dark:bg-[#C86B7A] text-white"
               : toast.type === "success"
-              ? "bg-[#5A8A5E] dark:bg-green-700 border-[#4A7C4E] dark:border-green-900 text-white"
-              : "bg-[#D4C5A9] dark:bg-gray-700 border-[#B5A58D] dark:border-gray-600 text-[#2D1B00] dark:text-white"
+              ? "bg-[#B8E8C8] dark:bg-[#2D4A3A] text-[#3D5A3F] dark:text-[#88C8A8]"
+              : "bg-white dark:bg-[#2D3748] border border-[#E8F4FC] dark:border-[#4A5568] text-[#4A5568] dark:text-[#E2E8F0]"
           }`}>
-            <div className="flex items-start gap-2 md:gap-3">
-              <div className="text-xl md:text-2xl flex-shrink-0">
+            <div className="flex items-start gap-3">
+              <div className="text-xl flex-shrink-0">
                 {toast.type === "error" ? "❌" : toast.type === "success" ? "✅" : "ℹ️"}
               </div>
               <div className="flex-1">
-                <p className="text-xs md:text-sm font-medium">{toast.message}</p>
+                <p className="text-sm font-medium">{toast.message}</p>
               </div>
               <button 
                 onClick={() => setToast(null)}
-                className="flex-shrink-0 hover:opacity-70 transition-opacity"
+                className="flex-shrink-0 hover:opacity-70 transition-opacity text-lg"
               >
                 ✕
               </button>
@@ -1139,18 +1278,18 @@ export default function Home() {
 
       {/* Confirmation Dialog */}
       {confirmDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#F5EFE3] dark:bg-gray-800 rounded-lg p-4 md:p-6 max-w-md w-full shadow-2xl animate-fade-in">
-            <h3 className="text-base md:text-lg font-bold mb-3 md:mb-4 text-[#2D1B00] dark:text-white">
+        <div className="fixed inset-0 bg-[#4A5568]/30 dark:bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-[#2D3748] rounded-3xl p-6 max-w-md w-full shadow-[0_16px_64px_rgba(168,162,158,0.2)] dark:shadow-[0_16px_64px_rgba(0,0,0,0.4)] animate-fade-in-scale">
+            <h3 className="text-lg font-bold mb-4 text-[#4A5568] dark:text-[#E2E8F0]">
               Confirm Action
             </h3>
-            <p className="text-sm md:text-base text-[#4A3425] dark:text-gray-300 mb-4 md:mb-6">
+            <p className="text-sm text-[#718096] dark:text-[#A0AEC0] mb-6">
               {confirmDialog.message}
             </p>
-            <div className="flex gap-2 md:gap-3 justify-end">
+            <div className="flex gap-3 justify-end">
               <button
                 onClick={() => setConfirmDialog(null)}
-                className="bg-[#D4C5A9] dark:bg-gray-700 hover:bg-[#C4B599] dark:hover:bg-gray-600 px-4 py-2 rounded text-[#2D1B00] dark:text-white font-medium transition-colors"
+                className="bg-[#F8F9FA] dark:bg-[#1A202C] hover:bg-[#E8F4FC] dark:hover:bg-[#4A5568] px-5 py-2.5 rounded-xl text-[#718096] dark:text-[#A0AEC0] font-medium transition-all"
               >
                 Cancel
               </button>
@@ -1159,7 +1298,7 @@ export default function Home() {
                   confirmDialog.onConfirm();
                   setConfirmDialog(null);
                 }}
-                className="bg-[#A85842] dark:bg-red-700 hover:bg-[#8B4332] dark:hover:bg-red-900 px-4 py-2 rounded text-white font-bold transition-colors"
+                className="bg-[#F0B8C4] hover:bg-[#E8A8B4] dark:bg-[#C86B7A] dark:hover:bg-[#B85A6A] px-5 py-2.5 rounded-xl text-white font-bold transition-all"
               >
                 Delete
               </button>

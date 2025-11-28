@@ -1,34 +1,128 @@
 @import "tailwindcss";
 
+/* Enable class-based dark mode for Tailwind v4 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Pastel Creative Design System */
 :root {
-  --background: #E8DCC8;
-  --foreground: #4A3425;
+  /* Core pastel palette - Light Mode */
+  --pastel-sky: #E8F4FC;
+  --pastel-lavender: #F0E6FA;
+  --pastel-peach: #FEF0E8;
+  --pastel-mint: #E8F8F0;
+  --pastel-pink: #FCE8F0;
+  --pastel-yellow: #FEF8E8;
+  
+  /* Primary accent colors */
+  --accent-primary: #A8D4E6;      /* Soft sky blue */
+  --accent-secondary: #D4B8E8;    /* Light lavender */
+  --accent-success: #B8E8C8;      /* Mint green */
+  --accent-warning: #F8D4B8;      /* Pastel peach */
+  --accent-error: #F0B8C4;        /* Pale pink */
+  
+  /* Text colors */
+  --text-primary: #4A5568;        /* Soft dark gray */
+  --text-secondary: #718096;      /* Medium gray */
+  --text-muted: #A0AEC0;          /* Light gray */
+  
+  /* Surface colors */
+  --surface-primary: #FFFFFF;
+  --surface-secondary: #FAFBFC;
+  --surface-elevated: #FFFFFF;
+  
+  /* Shadows - warm tinted */
+  --shadow-sm: 0 2px 8px rgba(168, 162, 158, 0.08);
+  --shadow-md: 0 4px 16px rgba(168, 162, 158, 0.12);
+  --shadow-lg: 0 8px 32px rgba(168, 162, 158, 0.16);
+  
+  /* Border radius */
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-full: 9999px;
+  
+  /* Background */
+  --background: #FAFBFC;
+  --foreground: #4A5568;
+}
+
+/* Dark Mode Colors */
+.dark {
+  /* Core pastel palette - Dark Mode (deeper, muted versions) */
+  --pastel-sky: #1a2a3a;
+  --pastel-lavender: #2a1a3a;
+  --pastel-peach: #3a2a1a;
+  --pastel-mint: #1a3a2a;
+  --pastel-pink: #3a1a2a;
+  --pastel-yellow: #3a3a1a;
+  
+  /* Primary accent colors - slightly more vibrant for dark mode */
+  --accent-primary: #6BA8C8;
+  --accent-secondary: #A888C8;
+  --accent-success: #88C8A8;
+  --accent-warning: #C8A888;
+  --accent-error: #C88898;
+  
+  /* Text colors */
+  --text-primary: #E2E8F0;
+  --text-secondary: #A0AEC0;
+  --text-muted: #718096;
+  
+  /* Surface colors */
+  --surface-primary: #1A202C;
+  --surface-secondary: #2D3748;
+  --surface-elevated: #2D3748;
+  
+  /* Shadows - cool tinted for dark mode */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  
+  /* Background */
+  --background: #1A202C;
+  --foreground: #E2E8F0;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-nunito), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Soft gradient backgrounds */
+.bg-gradient-pastel {
+  background: linear-gradient(135deg, var(--pastel-sky) 0%, var(--pastel-lavender) 50%, var(--pastel-peach) 100%);
+}
+
+.bg-gradient-soft {
+  background: linear-gradient(180deg, #FFFFFF 0%, var(--pastel-sky) 100%);
+}
+
+.dark .bg-gradient-soft {
+  background: linear-gradient(180deg, #2D3748 0%, var(--pastel-sky) 100%);
+}
+
+.bg-gradient-chat {
+  background: linear-gradient(180deg, var(--pastel-lavender) 0%, #FFFFFF 100%);
+}
+
+.dark .bg-gradient-chat {
+  background: linear-gradient(180deg, var(--pastel-lavender) 0%, #1A202C 100%);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Nunito', system-ui, -apple-system, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+/* Smooth animations */
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -36,30 +130,75 @@ body {
   }
 }
 
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes pulse-soft {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
 .animate-fade-in {
-  animation: fadeIn 0.3s ease-out;
+  animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-fade-in-scale {
+  animation: fadeInScale 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
 }
 
 @keyframes dotPulse {
   0%, 20% {
-    opacity: 0.2;
+    opacity: 0.3;
   }
   50% {
     opacity: 1;
   }
   100% {
-    opacity: 0.2;
+    opacity: 0.3;
   }
 }
 
 .dot-pulse {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
 }
 
 .dot-pulse span {
   display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
   animation: dotPulse 1.4s infinite ease-in-out;
 }
 
@@ -69,4 +208,73 @@ body {
 
 .dot-pulse span:nth-child(3) {
   animation-delay: 0.4s;
+}
+
+/* Custom scrollbar - soft and minimal */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(168, 162, 158, 0.3);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(168, 162, 158, 0.5);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Soft focus states */
+*:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Button hover transitions */
+button, a {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Soft card styles */
+.card-soft {
+  background: var(--surface-elevated);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  border: 1px solid rgba(168, 162, 158, 0.1);
+}
+
+.dark .card-soft {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Decorative blob shapes */
+.blob-decoration {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Theme toggle button animation */
+.theme-toggle {
+  transition: transform 0.3s ease;
+}
+
+.theme-toggle:hover {
+  transform: rotate(15deg);
 }
