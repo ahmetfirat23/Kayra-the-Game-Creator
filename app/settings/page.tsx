@@ -229,7 +229,7 @@ export default function Settings() {
               </p>
               <ul className="text-xs text-[#718096] dark:text-[#A0AEC0] space-y-2 mb-4">
                 <li className="flex items-center gap-2">
-                  <span className="text-[#8B7EC8] dark:text-[#D4B8E8]">✓</span> 25M tokens per 30-day period
+                  <span className="text-[#8B7EC8] dark:text-[#D4B8E8]">✓</span> 7M tokens per 30-day period
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="text-[#8B7EC8] dark:text-[#D4B8E8]">✓</span> Renews every 30 days
