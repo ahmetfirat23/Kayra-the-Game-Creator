@@ -602,13 +602,41 @@ export const processMessage = internalAction({
                 }
             );
 
-            // Get the final text and token usage
+            // Get the final text
             const finalText = await result.text;
-            const usage = await result.usage;
-            const totalTokens = usage?.totalTokens ?? 0;
 
             // Close MCP connection
             await mcpClient.close();
+
+            // Calculate total tokens by summing from all messages in the agent SDK storage
+            // This is the same source the UI uses, ensuring consistency
+            let totalTokens = 0;
+            try {
+                const { listMessages } = await import("@convex-dev/agent");
+                const allMessages = await listMessages(ctx, components.agent, {
+                    threadId: args.threadId,
+                    paginationOpts: { numItems: 100, cursor: null },
+                });
+                
+                // Find the current response's order (highest order in the thread)
+                const maxOrder = Math.max(...allMessages.page.map(m => (m as { order?: number }).order ?? 0));
+                
+                // Sum tokens from all messages with this order (current response)
+                for (const msg of allMessages.page) {
+                    const msgOrder = (msg as { order?: number }).order ?? 0;
+                    if (msgOrder === maxOrder) {
+                        const msgUsage = msg.usage as { totalTokens?: number } | undefined;
+                        totalTokens += msgUsage?.totalTokens ?? 0;
+                    }
+                }
+                console.log(`📊 Aggregated tokens from agent SDK messages (order=${maxOrder}): ${totalTokens}`);
+            } catch (error) {
+                console.error("Error calculating token usage from messages:", error);
+                // Fallback to result.usage if we can't read messages
+                const usage = await result.usage;
+                totalTokens = usage?.totalTokens ?? 0;
+                console.log(`📊 Fallback tokens from result.usage: ${totalTokens}`);
+            }
 
             // Post-process: Replace full file contents in readFile tool outputs with summaries
             // This prevents context bloat in future messages while keeping full content for UI
@@ -745,37 +773,6 @@ export const processMessage = internalAction({
                 // Don't fail the whole request if post-processing fails
             }
 
-            // Update the last assistant message with the TOTAL aggregated token usage
-            // (The AI SDK's result.usage contains the sum of all steps)
-            try {
-                const { listMessages } = await import("@convex-dev/agent");
-                const latestMessages = await listMessages(ctx, components.agent, {
-                    threadId: args.threadId,
-                    paginationOpts: { numItems: 50, cursor: null },
-                });
-                
-                // Find the last assistant message and update its usage with the total
-                const lastAssistantMsg = [...latestMessages.page]
-                    .reverse()
-                    .find(m => m.message && typeof m.message === 'object' && 'role' in m.message && m.message.role === 'assistant');
-                
-                if (lastAssistantMsg && lastAssistantMsg._id && totalTokens > 0) {
-                    await ctx.runMutation(components.agent.messages.updateMessage, {
-                        messageId: lastAssistantMsg._id,
-                        patch: {
-                            usage: {
-                                promptTokens: usage?.promptTokens ?? 0,
-                                completionTokens: usage?.completionTokens ?? 0,
-                                totalTokens: totalTokens,
-                            },
-                        },
-                    });
-                    console.log(`📊 Updated last assistant message with aggregated tokens: ${totalTokens}`);
-                }
-            } catch (error) {
-                console.error("Error updating aggregated token usage:", error);
-            }
-
             // Save the final response text and token usage to the messages table
             if (finalText) {
                 await ctx.runMutation(internal.chat.saveAgentResponse, {
@@ -792,6 +789,9 @@ export const processMessage = internalAction({
                     totalTokens,
                 });
             }
+
+            // Log aggregated tokens for debugging
+            console.log(`📊 Response complete - aggregated tokens: ${totalTokens}`);
 
             // Mark chat as user's turn (allows user to send messages again)
             await ctx.runMutation(internal.chat.setAiTurn, {
