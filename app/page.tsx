@@ -114,8 +114,10 @@ function LandingPage() {
 /**
  * Message component that renders a single message with smooth text streaming.
  * Uses useSmoothText to animate text as it streams in for a better UX.
+ * @param aggregatedTokens - If provided, shows this aggregated token count instead of per-message tokens
+ * @param showTokens - Whether to show token count on this message (should only be true for last assistant msg in a sequence)
  */
-function MessageComponent({ message }: { message: UIMessage }) {
+function MessageComponent({ message, aggregatedTokens, showTokens = true }: { message: UIMessage; aggregatedTokens?: number; showTokens?: boolean }) {
   const [visibleText] = useSmoothText(message.text, {
     startStreaming: message.status === "streaming",
   });
@@ -123,9 +125,10 @@ function MessageComponent({ message }: { message: UIMessage }) {
 
   const isUser = message.role === "user";
   const isStreaming = message.status === "streaming";
+  // Use aggregated tokens if provided, otherwise fall back to message's own tokens
   const usage = (message.metadata as { usage?: { totalTokens?: number } } | undefined)?.usage;
-  // Only show tokens when message is complete (not streaming)
-  const totalTokens = !isUser && !isStreaming ? usage?.totalTokens : undefined;
+  // Only show tokens when message is complete (not streaming) and showTokens is true
+  const totalTokens = !isUser && !isStreaming && showTokens ? (aggregatedTokens ?? usage?.totalTokens) : undefined;
 
   // Extract tool calls from message parts
   type MessagePart = { type?: string; output?: string | object; [key: string]: unknown };
@@ -145,7 +148,7 @@ function MessageComponent({ message }: { message: UIMessage }) {
 
   return (
     <div 
-      className={`p-2 md:p-3 rounded-lg max-w-[95%] md:max-w-[90%] ${
+      className={`p-2 md:p-3 rounded-lg max-w-[95%] md:max-w-[90%] overflow-hidden ${
         isUser
         ? "bg-[#5A8A5E] dark:bg-blue-600 self-end ml-auto"
         : "bg-[#D4C5A9] dark:bg-gray-700"
@@ -196,7 +199,6 @@ function MessageComponent({ message }: { message: UIMessage }) {
             const toolName = tool.type ? tool.type.replace('tool-', '') : 'tool';
             const isFileOperation = toolName.toLowerCase().includes('write') || toolName.toLowerCase().includes('file');
             const isExpanded = expandedTools.has(idx);
-            const toolWithArgs = tool as { args?: unknown; output?: unknown };
             
             // Format tool arguments for display
             const formatArgs = (args: unknown): string => {
@@ -209,6 +211,15 @@ function MessageComponent({ message }: { message: UIMessage }) {
                 return String(args);
               }
             };
+
+            // For writeFile, the full content is in args.content
+            // For readFile, the full content is in output (with metadata marker)
+            const isWriteFile = toolName.toLowerCase().includes('writefile');
+            const isReadFile = toolName.toLowerCase().includes('readfile');
+            
+            // Extract args - could be in different places depending on tool type
+            const toolAny = tool as Record<string, unknown>;
+            const args = (toolAny.args || toolAny.input || toolAny.arguments || {}) as { path?: string; content?: string; [key: string]: unknown };
             
             return (
               <div key={idx} className="bg-[#B5A58D] dark:bg-gray-800 rounded text-xs border border-[#9A8A70] dark:border-gray-700 overflow-hidden">
@@ -218,6 +229,12 @@ function MessageComponent({ message }: { message: UIMessage }) {
                 >
                   <div className="text-[#5A8A5E] dark:text-blue-300 font-mono font-bold flex items-center gap-2">
                     {isFileOperation ? '📝' : '🔧'} {toolName}
+                    {/* Show path for file operations */}
+                    {args.path && (
+                      <span className="font-normal text-[#4A3425] dark:text-gray-400 truncate max-w-[200px]">
+                        {args.path}
+                      </span>
+                    )}
                   </div>
                   <div className={`text-[#5A8A5E] dark:text-blue-300 transition-transform duration-200 ${isExpanded ? 'rotate-90' : 'rotate-0'}`}>
                     ▶
@@ -225,12 +242,17 @@ function MessageComponent({ message }: { message: UIMessage }) {
                 </button>
                 {isExpanded && (
                   <div className="border-t border-[#9A8A70] dark:border-gray-700 bg-[#2D1B00]/5 dark:bg-black/30 p-3 space-y-3">
-                    {/* Show tool arguments if available (e.g., full file content for writeFile) */}
-                    {toolWithArgs.args !== undefined && toolWithArgs.args !== null && (
+                    {/* For writeFile, show path, line count, and full content */}
+                    {isWriteFile && args.content && (
                       <div>
-                        <div className="text-xs font-bold text-[#5A8A5E] dark:text-blue-300 mb-1">Arguments:</div>
-                        <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed">
-                          {formatArgs(toolWithArgs.args)}
+                        <div className="text-xs text-[#5A8A5E] dark:text-green-400 mb-2">
+                          ✅ Written to {args.path || 'file'}
+                          <br />
+                          📊 {args.content.split('\n').length} lines
+                        </div>
+                        <div className="text-xs font-bold text-[#5A8A5E] dark:text-blue-300 mb-1">Full Code:</div>
+                        <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed bg-[#2D1B00]/10 dark:bg-black/20 p-2 rounded">
+                          {args.content}
                         </pre>
                       </div>
                     )}
@@ -238,53 +260,60 @@ function MessageComponent({ message }: { message: UIMessage }) {
                     {tool.output && (() => {
                       const outputStr = typeof tool.output === 'string' ? tool.output : JSON.stringify(tool.output, null, 2);
                       
-                      // Extract full content if present (for readFile)
-                      // Check for both old and new metadata formats
-                      const fullContentMatch = outputStr.match(/<!--FULL_CONTENT_METADATA:(.+?)-->/) || 
-                                               outputStr.match(/<!--FULL_CONTENT:(.+?)-->/);
-                      let displayOutput = outputStr;
-                      let fullContent: string | null = null;
-                      
-                      if (fullContentMatch) {
-                        try {
-                          const parsed = JSON.parse(fullContentMatch[1]);
-                          if (parsed._fullContent) {
-                            fullContent = parsed._fullContent;
-                            // Remove the metadata marker from display
-                            displayOutput = outputStr.replace(/<!--FULL_CONTENT[^:]*:.+?-->/, '').trim();
-                          }
-                        } catch {
-                          // If parsing fails, check if the output itself is the full content
-                          // (for readFile, the output might be the full file content)
-                          if (outputStr.length > 1000 && !outputStr.includes('✅ Read')) {
-                            // Likely full content without metadata marker
+                      // For readFile, extract and display the full content
+                      if (isReadFile) {
+                        // Check for metadata marker
+                        const fullContentMatch = outputStr.match(/<!--FULL_CONTENT_METADATA:(.+?)-->/);
+                        let fullContent: string | null = null;
+                        let filePath: string | null = args.path || null;
+                        
+                        if (fullContentMatch) {
+                          try {
+                            const parsed = JSON.parse(fullContentMatch[1]);
+                            fullContent = parsed._fullContent || null;
+                            filePath = parsed._path || filePath;
+                          } catch {
+                            // Parsing failed, content before marker is the full content
                             fullContent = outputStr.split('<!--FULL_CONTENT_METADATA:')[0].trim();
-                            displayOutput = `✅ File content (${fullContent.split('\n').length} lines)`;
+                          }
+                        } else {
+                          // No marker, the output itself might be the full content
+                          // Only if it doesn't look like a summary (doesn't start with ✅)
+                          if (!outputStr.startsWith('✅')) {
+                            fullContent = outputStr;
                           }
                         }
-                      } else if (outputStr.length > 1000 && toolName.includes('readFile')) {
-                        // If it's a readFile and output is large, it's likely the full content
-                        fullContent = outputStr.split('<!--FULL_CONTENT_METADATA:')[0].trim();
-                        displayOutput = `✅ File content (${fullContent.split('\n').length} lines)`;
-                      }
-                      
-                      return (
-                        <div>
-                          {toolWithArgs.args !== undefined && toolWithArgs.args !== null && (
-                            <div className="text-xs font-bold text-[#5A8A5E] dark:text-blue-300 mb-1 mt-3">Output:</div>
-                          )}
-                          <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed">
-                            {displayOutput}
-                          </pre>
-                          {/* Show full content if available (for readFile) */}
-                          {fullContent && (
-                            <div className="mt-3">
-                              <div className="text-xs font-bold text-[#5A8A5E] dark:text-blue-300 mb-1">Full Content:</div>
+                        
+                        if (fullContent) {
+                          const lineCount = fullContent.split('\n').length;
+                          return (
+                            <div>
+                              <div className="text-xs text-[#5A8A5E] dark:text-green-400 mb-2">
+                                ✅ Read from {filePath || 'file'}
+                                <br />
+                                📊 {lineCount} lines
+                              </div>
+                              <div className="text-xs font-bold text-[#5A8A5E] dark:text-blue-300 mb-1">File Content:</div>
                               <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed bg-[#2D1B00]/10 dark:bg-black/20 p-2 rounded">
                                 {fullContent}
                               </pre>
                             </div>
-                          )}
+                          );
+                        }
+                      }
+                      
+                      // For writeFile, content is already shown above, skip output display
+                      if (isWriteFile) {
+                        return null;
+                      }
+                      
+                      // For other tools, show full output
+                      return (
+                        <div>
+                          <div className="text-xs font-bold text-[#5A8A5E] dark:text-blue-300 mb-1">Output:</div>
+                          <pre className="text-[#2D1B00] dark:text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto text-xs font-mono leading-relaxed">
+                            {outputStr}
+                          </pre>
                         </div>
                       );
                     })()}
@@ -339,7 +368,7 @@ export default function Home() {
     selectedChat?.threadId 
       ? { 
           threadId: selectedChat.threadId,
-          paginationOpts: { numItems: 50, cursor: null },
+          paginationOpts: { numItems: 200, cursor: null },
           streamArgs: { kind: "list" as const }
         }
       : "skip"
@@ -398,10 +427,7 @@ export default function Home() {
   // Sync user on mount (create user record if doesn't exist)
   useEffect(() => {
     if (isSignedIn) {
-      console.log("Syncing user...");
-      syncUser()
-        .then((userId) => console.log("User synced:", userId))
-        .catch((err) => console.error("Failed to sync user:", err));
+      syncUser();
     }
   }, [syncUser, isSignedIn]);
 
@@ -938,7 +964,7 @@ export default function Home() {
         }`}>
 
         {/* Messages */}
-        <div className="flex-1 p-3 md:p-6 overflow-y-auto space-y-3 md:space-y-4 min-h-0">
+        <div className="flex-1 p-3 md:p-6 overflow-y-auto overflow-x-hidden space-y-3 md:space-y-4 min-h-0">
           {selectedChat?.repoId === "pending" ? (
             <div className="text-center text-[#5A8A5E] dark:text-blue-500 mt-8 text-sm animate-pulse">
               <div className="text-2xl mb-2">⚙️</div>
@@ -949,9 +975,44 @@ export default function Home() {
             </div>
           ) : selectedChat && selectedChat.repoId && selectedChat.repoId !== "pending" ? (
             messages && messages.length > 0 ? (
-              messages.map((msg) => (
-                <MessageComponent key={msg.id} message={msg} />
-              ))
+              messages.map((msg, idx) => {
+                // Calculate if this is the last assistant message before a user message (or end of messages)
+                // to show aggregated tokens only on that message
+                let aggregatedTokens: number | undefined;
+                let showTokens = false;
+                
+                if (msg.role === "assistant") {
+                  // Check if next message is user message or this is the last message
+                  const nextMsg = messages[idx + 1];
+                  const isLastInSequence = !nextMsg || nextMsg.role === "user";
+                  
+                  if (isLastInSequence) {
+                    showTokens = true;
+                    // Aggregate tokens from all assistant messages in this sequence (going backwards)
+                    let totalAggregated = 0;
+                    for (let i = idx; i >= 0; i--) {
+                      const m = messages[i];
+                      if (m.role === "user") break;
+                      if (m.role === "assistant") {
+                        const usage = (m.metadata as { usage?: { totalTokens?: number } } | undefined)?.usage;
+                        totalAggregated += usage?.totalTokens ?? 0;
+                      }
+                    }
+                    if (totalAggregated > 0) {
+                      aggregatedTokens = totalAggregated;
+                    }
+                  }
+                }
+                
+                return (
+                  <MessageComponent 
+                    key={msg.id} 
+                    message={msg} 
+                    aggregatedTokens={aggregatedTokens}
+                    showTokens={msg.role === "user" || showTokens}
+                  />
+                );
+              })
             ) : (
               <div className="text-center text-[#5B4332] dark:text-gray-500 mt-4 md:mt-8 text-xs md:text-sm">
                 <div className="text-2xl md:text-3xl mb-2 md:mb-3">👋</div>
@@ -973,10 +1034,16 @@ export default function Home() {
 
         {/* Input form */}
         <form onSubmit={handleSend} className="p-3 md:p-6 border-t border-[#B5A58D] dark:border-gray-700">
-          <div className="flex gap-2">
-            <input 
+          <div className="flex gap-2 items-end">
+            <textarea 
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend(e);
+                }
+              }}
               placeholder={
                 selectedChat?.repoId === "pending" 
                   ? "Setting up..." 
@@ -985,7 +1052,8 @@ export default function Home() {
                   : "Describe your game..."
               }
               disabled={selectedChat?.repoId === "pending" || isCurrentChatProcessing || isSending}
-              className="flex-1 bg-[#F5EFE3] dark:bg-gray-800 border border-[#B5A58D] dark:border-gray-600 text-[#2D1B00] dark:text-white rounded p-2 text-xs md:text-sm focus:outline-none focus:border-[#5A8A5E] dark:focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed placeholder-[#8B7A65] dark:placeholder-gray-500"
+              rows={1}
+              className="flex-1 bg-[#F5EFE3] dark:bg-gray-800 border border-[#B5A58D] dark:border-gray-600 text-[#2D1B00] dark:text-white rounded p-2 text-xs md:text-sm focus:outline-none focus:border-[#5A8A5E] dark:focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed placeholder-[#8B7A65] dark:placeholder-gray-500 resize-none overflow-y-auto overflow-x-hidden"
             />
             <button
               type="submit"

@@ -105,8 +105,6 @@ export const createAndAttachRepo = internalAction({
                 preset: "expo", // Use Expo preset for dev server configuration
             },
         });
-        
-        console.log(`Created repo ${repoId}, installing React Three Fiber dependencies...`);
 
         // Wait a moment for the repo to be ready
         await new Promise(resolve => setTimeout(resolve, 3000));
@@ -128,19 +126,14 @@ export const createAndAttachRepo = internalAction({
             
             try {
                 // Install R3F and dependencies
-                console.log("Installing three, @react-three/fiber, and @react-three/drei...");
                 await mcpClient.callTool({
                     name: "exec",
                     arguments: { command: "npm install three @react-three/fiber @react-three/drei" },
                 });
-                
-                console.log("Installing expo-gl...");
                 await mcpClient.callTool({
                     name: "exec",
                     arguments: { command: "npx expo install expo-gl" },
                 });
-                
-                console.log("Committing dependency changes...");
                 await mcpClient.callTool({
                     name: "git_commit_and_push",
                     arguments: { message: "Initial setup: Installed React Three Fiber dependencies" },
@@ -434,63 +427,91 @@ export const processMessage = internalAction({
 
             // Create Freestyle tools that use the MCP client
             const freestyleTools = createFreestyleTools(mcpClient);
-            
-            console.log(`✅ Created ${Object.keys(freestyleTools).length} Freestyle tools`);
 
             // Create agent with user's API key
             const agent = createAgent(apiKey);
 
             // Custom context handler to limit context window:
-            // - All messages until first commit (planning phase)
+            // - All messages until first tool call (planning phase)
             // - Plus recent messages for ongoing work
             // CRITICAL: Must ensure tool calls and their outputs are always paired
             const contextHandler: ContextHandler = async (_ctx, handlerArgs) => {
                 const { recent, inputPrompt } = handlerArgs;
                 
-                // Find the index of the first commitAndPush tool call
-                let firstCommitIndex = -1;
+                // Find the index of the first tool call (any tool, not just commit)
+                // This marks the end of the planning phase
+                let firstToolCallIndex = -1;
                 for (let i = 0; i < recent.length; i++) {
                     const msg = recent[i];
                     if (msg.role === "assistant" && msg.content) {
-                        const contentStr = JSON.stringify(msg.content);
-                        if (contentStr.includes("commitAndPush")) {
-                            firstCommitIndex = i;
+                        // Check if this message has any tool call content
+                        // Tool calls can be: type "tool_use" (Anthropic), "tool-call" (Vercel AI SDK), or have toolCallId
+                        if (Array.isArray(msg.content)) {
+                            const hasToolCall = msg.content.some((part: unknown) => {
+                                if (typeof part === "object" && part !== null) {
+                                    const p = part as Record<string, unknown>;
+                                    // Check for various tool call formats
+                                    return p.type === "tool_use" || 
+                                           p.type === "tool-call" || 
+                                           p.type === "tool_call" ||
+                                           "toolCallId" in p ||
+                                           "toolName" in p;
+                                }
+                                return false;
+                            });
+                            if (hasToolCall) {
+                                firstToolCallIndex = i;
+                                break;
+                            }
+                        }
+                        // Also check if content is stringified and contains tool call indicators
+                        const contentStr = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
+                        if (contentStr.includes('"type":"tool') || contentStr.includes('"toolCallId"') || contentStr.includes('"toolName"')) {
+                            firstToolCallIndex = i;
                             break;
                         }
                     }
                 }
                 
-                // If no commit found yet, include all messages (planning phase)
-                if (firstCommitIndex === -1) {
+                // If no tool call found yet, include all messages (planning phase)
+                if (firstToolCallIndex === -1) {
                     const result = [...recent, ...inputPrompt];
-                    console.log("📋 CONTEXT WINDOW (no commit yet - planning phase):");
+                    console.log("📋 CONTEXT WINDOW (no tool call yet - planning phase):");
                     console.log(`  Total messages: ${result.length}`);
+                    // Debug: log first few assistant message structures to understand format
+                    const assistantMsgs = recent.filter(m => m.role === "assistant").slice(0, 2);
+                    for (const am of assistantMsgs) {
+                        console.log("  Assistant msg content type:", Array.isArray(am.content) ? "array" : typeof am.content);
+                        if (Array.isArray(am.content) && am.content.length > 0) {
+                            console.log("  First content part:", JSON.stringify(am.content[0]).slice(0, 200));
+                        }
+                    }
                     return result;
                 }
                 
-                // Find the end of the first commit "block" - we need to include all tool results
-                // that follow the assistant message with commitAndPush
-                let firstCommitEndIndex = firstCommitIndex;
-                for (let i = firstCommitIndex + 1; i < recent.length; i++) {
+                // Find the end of the first tool call "block" - we need to include all tool results
+                // that follow the assistant message with tool calls
+                let firstToolCallEndIndex = firstToolCallIndex;
+                for (let i = firstToolCallIndex + 1; i < recent.length; i++) {
                     const msg = recent[i];
                     // Include subsequent tool messages (they're responses to tool calls)
                     if (msg.role === "tool") {
-                        firstCommitEndIndex = i;
+                        firstToolCallEndIndex = i;
                     } else {
                         // Stop when we hit a non-tool message (user or next assistant turn)
                         break;
                     }
                 }
                 
-                // Include all messages up to and including the first commit's tool results
-                const planningPhase = recent.slice(0, firstCommitEndIndex + 1);
+                // Include all messages up to and including the first tool call's results
+                const planningPhase = recent.slice(0, firstToolCallEndIndex + 1);
                 
                 // Get recent messages but ensure we don't break tool call/result pairs
                 // Start from the end and work backwards to find a safe cut point
                 let safeStartIndex = recent.length;
                 const targetRecentCount = 6; // Try to include ~6 recent messages
                 
-                for (let i = recent.length - 1; i >= firstCommitEndIndex + 1 && safeStartIndex > recent.length - targetRecentCount; i--) {
+                for (let i = recent.length - 1; i >= firstToolCallEndIndex + 1 && safeStartIndex > recent.length - targetRecentCount; i--) {
                     const msg = recent[i];
                     // Safe to start from a user message
                     if (msg.role === "user") {
@@ -511,7 +532,7 @@ export const processMessage = internalAction({
                 }
                 
                 // Don't include messages that are already in planning phase
-                const recentMessages = safeStartIndex > firstCommitEndIndex 
+                const recentMessages = safeStartIndex > firstToolCallEndIndex 
                     ? recent.slice(safeStartIndex) 
                     : [];
                 
@@ -519,8 +540,8 @@ export const processMessage = internalAction({
                 const result = [...planningPhase, ...recentMessages, ...inputPrompt];
                 
                 // Debug logging
-                console.log("📋 CONTEXT WINDOW (after first commit):");
-                console.log(`  First commit at index: ${firstCommitIndex}, end at: ${firstCommitEndIndex}`);
+                console.log("📋 CONTEXT WINDOW (after first tool call):");
+                console.log(`  First tool call at index: ${firstToolCallIndex}, end at: ${firstToolCallEndIndex}`);
                 console.log(`  Planning phase: ${planningPhase.length} messages`);
                 console.log(`  Recent (from ${safeStartIndex}): ${recentMessages.length} messages`);
                 console.log(`  Input prompt: ${inputPrompt.length} messages`);
@@ -682,7 +703,6 @@ export const processMessage = internalAction({
                                     },
                                 },
                             });
-                            console.log("Replaced full content with summary for message:", msg._id);
                         }
                     }
                 }

@@ -29,10 +29,8 @@ export const syncUser = mutation({
     args: {},
     handler: async (ctx) => {
         const identity = await ctx.auth.getUserIdentity();
-        console.log("Identity:", JSON.stringify(identity, null, 2));
         
         if (!identity) {
-            console.log("No identity found");
             return null;
         }
 
@@ -42,7 +40,6 @@ export const syncUser = mutation({
             .first();
 
         if (existingUser) {
-            console.log("Updating existing user:", existingUser._id);
             // Update existing user
             await ctx.db.patch(existingUser._id, {
                 email: identity.email || existingUser.email,
@@ -52,7 +49,6 @@ export const syncUser = mutation({
             });
             return existingUser._id;
         } else {
-            console.log("Creating new user for:", identity.subject);
             // Create new user
             const userId = await ctx.db.insert("users", {
                 clerkId: identity.subject,
@@ -60,7 +56,6 @@ export const syncUser = mutation({
                 name: identity.name,
                 tier: "free",
             });
-            console.log("Created user:", userId);
             return userId;
         }
     },
@@ -389,8 +384,6 @@ export const resetAllDailyMessageCounts = internalMutation({
                 lastFreeUsageReset: now,
             });
         }
-        
-        console.log(`Reset daily message counts for ${resetCount} free users at ${new Date(now).toISOString()}`);
         return resetCount;
     },
 });
@@ -418,12 +411,6 @@ export const exhaustAllFreeDailyMessageCounts = internalMutation({
                 updatedCount++;
             }
         }
-
-        console.log(
-            `Exhausted remaining daily messages for ${updatedCount} free users at ${new Date(
-                now,
-            ).toISOString()}`,
-        );
         return updatedCount;
     },
 });
@@ -485,10 +472,6 @@ export const downgradeExpiredProUsers = internalMutation({
                 downgraded++;
             }
         }
-
-        console.log(
-            `Downgraded ${downgraded} users from Pro to Free at ${new Date(now).toISOString()}`,
-        );
         return downgraded;
     },
 });
@@ -579,13 +562,7 @@ export const chargeForProRenewal = internalMutation({
         if (!user) {
             return;
         }
-
-        console.log(
-            `Mock Pro renewal charge for user ${args.userId} - amount: ${
-                args.amountCents / 100
-            } USD`,
-        );
-        // No-op: add real billing integration here later.
+        // TODO add real billing integration here later.
     },
 });
 

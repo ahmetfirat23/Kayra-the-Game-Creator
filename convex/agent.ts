@@ -50,7 +50,7 @@ Mobile Controls:
 
 2. WAIT for user approval
 3. Iterate if user wants changes
-4. Proceed to Phase 2 only after approval
+4. Write the design document to a file and proceed to Phase 2 only after approval
 
 PHASE 2: IMPLEMENTATION (After Approval or For Updates)
 1. List files to see current structure
@@ -62,10 +62,11 @@ Add touch controls
 Generate obstacles
 Implement collision detection and scoring"
 
-3. Read relevant template files if needed
-4. CREATE/UPDATE game files with complete, working code
-5. COMMIT changes with descriptive message
-6. Explain what you created and how the game works
+3. Check the design document and update if user's response require you to make design changes
+4. Read relevant template files if needed
+5. CREATE/UPDATE game files with complete, working code
+6. COMMIT changes with descriptive message
+7. Explain what you created and how the game works
 
 ITERATION: For changes to existing games, skip Phase 1 and go straight to Phase 2
 
