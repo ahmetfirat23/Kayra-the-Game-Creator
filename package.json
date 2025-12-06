@@ -16,7 +16,7 @@
     "convex": "^1.29.3",
     "freestyle-sandboxes": "^0.0.97",
     "freestyle-sh": "^0.4.32",
-    "next": "16.0.3",
+    "next": "^16.0.7",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-markdown": "^10.1.0",
