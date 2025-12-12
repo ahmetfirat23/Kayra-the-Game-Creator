@@ -583,6 +583,13 @@ export const deleteChat = mutation({
             });
         }
 
+        // Delete the Freestyle repository if it exists
+        if (chat.repoId && chat.repoId !== "pending") {
+            await ctx.scheduler.runAfter(0, internal.chat.deleteRepo, {
+                repoId: chat.repoId,
+            });
+        }
+
         // Delete the chat
         await ctx.db.delete(args.chatId);
     },
@@ -599,5 +606,24 @@ export const deleteThread = internalAction({
         await ctx.runAction(components.agent.threads.deleteAllForThreadIdSync, {
             threadId: args.threadId,
         });
+    },
+});
+
+/**
+ * Internal action to delete a Freestyle repository
+ */
+export const deleteRepo = internalAction({
+    args: {
+        repoId: v.string(),
+    },
+    handler: async (ctx, args) => {
+        try {
+            const { freestyle } = await import("../lib/freestyle");
+            await freestyle.deleteGitRepository({ repoId: args.repoId });
+            console.log(`Deleted Freestyle repo: ${args.repoId}`);
+        } catch (error) {
+            console.error(`Failed to delete Freestyle repo ${args.repoId}:`, error);
+            // Don't throw - we still want the chat to be deleted even if repo deletion fails
+        }
     },
 });
