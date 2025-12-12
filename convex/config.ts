@@ -1,0 +1,29 @@
+export const CONFIG = {
+  // User limits
+  FREE_TIER_DAILY_LIMIT: 5,
+  MAX_MESSAGE_LENGTH: 10000,
+  MAX_API_KEY_LENGTH: 200,
+  MIN_API_KEY_LENGTH: 20,
+  
+  // Rate limiting
+  MAX_CHATS_PER_MINUTE: 3,
+  RATE_LIMIT_WINDOW_MS: 60000,
+  
+  // Timeouts
+  API_VALIDATION_TIMEOUT_MS: 10000,
+  REPO_CREATION_WAIT_MS: 3000,
+  
+  // Agent settings
+  MAX_AGENT_STEPS: 20,
+  STREAM_THROTTLE_MS: 100,
+  RECENT_MESSAGES_COUNT: 2,
+  
+  // Pro tier
+  DEFAULT_PRO_MONTHLY_TOKEN_LIMIT: 7_000_000,
+  
+  // Free tier token cap
+  FREE_TIER_DAILY_TOKEN_CAP: 1_000_000,
+
+  // Model settings
+  LANGUAGE_MODEL: "gpt-5-mini"
+} as const;

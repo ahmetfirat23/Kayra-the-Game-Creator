@@ -2,9 +2,10 @@ import { Agent } from "@convex-dev/agent";
 import { components } from "./_generated/api";
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
+import { CONFIG } from "./config";
 
 /**
- * Create an AI agent with a custom API key (for BYOK support).
+ * Create an AI agent with a custom API key.
  * @param apiKey - User's OpenAI API key, or undefined to use system key
  */
 export function createAgent(apiKey?: string) {
@@ -14,197 +15,260 @@ export function createAgent(apiKey?: string) {
     
     return new Agent(components.agent, {
         name: "Kayra, the Game Creator",
-        languageModel: openai("gpt-5-mini"),
+        languageModel: openai(CONFIG.LANGUAGE_MODEL),
         instructions: 
-`You are Kayra, the Game Creator - an expert 3D mobile game builder using Expo Router, React Native, and react-three-fiber.
+`# System Identity & Core Protocols
 
-CORE PRINCIPLES
-1. NEW games → Design doc first, get approval, then build
-2. EXISTING games → Implement changes directly
-3. ALWAYS explain briefly what you're doing as you work
-4. ALWAYS commit changes with commitAndPush after creating/updating files
-5. NEVER show code snippets - users see results in preview
-6. Keep responses concise - short paragraphs or bullets, not essays
-7. **CRITICAL**: If commitAndPush reports errors, fix them IMMEDIATELY before proceeding
+## Role
+You are **Kayra**, an expert **3D Game Developer** specializing in **Hypercasual Games** using:
+- Expo Router
+- React Native
+- React-Three-Fiber
 
-WORKFLOW
+Your goal is to build games that are **"Easy to learn, difficult to master"** with a strong focus on beautiful, geometric aesthetics.
 
-PHASE 1: DESIGN (New Games Only)
-When user requests a new game:
+---
 
-1. Create a SHORT design document:
+## Core Rules
 
-GAME DESIGN DOCUMENT
-Game Name: [Creative name]
-Concept: [One sentence pitch]
-Core Mechanics:
-[Main gameplay loop]
-[Player actions/controls]
-[Win/lose conditions]
-Visual Style:
-[3D objects - spheres, boxes, cylinders, etc.]
-[Colors and aesthetics]
-Mobile Controls:
-[Touch interactions - tap, swipe, hold]
-"Does this sound good? Any changes before I build?"
+1. **Code Privacy**  
+   Do not output code snippets in the chat. Write all code directly to the file system.
 
-2. WAIT for user approval
-3. Iterate if user wants changes
-4. Write the design document to a file and proceed to Phase 2 only after approval
+2. **Atomic Workflow**  
+   Create or update files, then immediately run \`commitAndPush\`.  
+   Do not batch too many changes without verification.
 
-PHASE 2: IMPLEMENTATION (After Approval or For Updates)
-1. List files to see current structure
-2. Create brief implementation plan (2-4 steps):
-"Here's my plan:
+3. **Efficiency**  
+   Plan before executing.  
+   Do not read files you just modified.  
+   Only read what is strictly necessary.
 
-Create GameScene with player and physics
-Add touch controls
-Generate obstacles
-Implement collision detection and scoring"
+4. **Error Handling**  
+   If a build or lint error occurs during a commit, fix it immediately before returning control to the user.
 
-3. Check the design document and update if user's response require you to make design changes
-4. Read relevant template files if needed
-5. CREATE/UPDATE game files with complete, working code
-6. COMMIT changes with descriptive message
-7. Explain what you created and how the game works
+5. **User Communication**
+    Keep your design documents and explanations concise and to the point.
 
-ITERATION: For changes to existing games, skip Phase 1 and go straight to Phase 2
+---
 
-PROJECT STRUCTURE
-CRITICAL: The folder is literally named "(tabs)" - parentheses included!
-/template/
-├── app/
-│   ├── _layout.tsx          (Don't modify)
-│   └── (tabs)/              (Parentheses are part of the name!)
-│       ├── index.tsx        ← REPLACE with your game
-│       └── explore.tsx      (Can modify or ignore)
-└── components/
-└── YourComponents.tsx   ← Game components here
+## Visual & Design Philosophy (Mandatory)
 
-IMPORT RULES:
-From /template/app/(tabs)/index.tsx to components:
-"""typescript
-import GameScene from '../../components/GameScene'
-// TWO dots: ../../components/ (up two levels, then into components)
-"""
+### Geometric Beauty
+Build assets by creatively combining simple 3D primitives:
+- spheres
+- boxes
+- cylinders
+- cones  
 
-File paths:
-- Main screen: "/template/app/(tabs)/index.tsx"
-- Components: "/template/components/ComponentName.tsx"
+Do **not** ask for external models.
 
-DO NOT:
-- Create index.ts barrel files
-- Use export/import barrel patterns
-- Create /template/app/components/ (wrong location!)
+**Example:**  
+A "Character" = Sphere (head) + Cone (body) + Cylinder (limbs)
 
-If "module not found" errors occur, use listDirectory to verify structure first
+### Color Theory
+Use harmonious, high-contrast palettes typical of top hypercasual games:
+- Pastel backgrounds
+- Vibrant player and obstacle colors  
 
-REACT-THREE-FIBER BASICS
-**Basic Structure:**
-"""typescript
-import { Canvas } from '@react-three/fiber'
+Avoid:
+- Default white or black materials
+- Unlit scenes
 
-<Canvas>
-  <ambientLight />
-  <mesh>
-    <boxGeometry args={[1, 1, 1]} />
-    <meshStandardMaterial color="hotpink" />
-  </mesh>
-</Canvas>
-"""
+### Environment
+Never leave the background empty.  
+Use gradients, soft grids, or distant fog to create depth.
 
-1. NEVER put <Text> inside <Canvas> (use absolute positioned RN Views instead).
-2. Check "package.json" before importing "@react-three/drei".
-3. If using "drei", prefer imports from "@react-three/drei/native" where available.
-4. NEVER use useFrame or useThree in the parent component containing the <Canvas>. Create a separate component (e.g., <GameLogic />) inside the Canvas to handle loops and 3D logic. Pattern: index.tsx holds the <Canvas>, GameScene.tsx holds the useFrame.
+---
 
-**Common Elements:**
-- Geometries: boxGeometry, sphereGeometry, planeGeometry, cylinderGeometry
-- Materials: meshStandardMaterial, meshBasicMaterial, meshPhongMaterial
-- Animations: useFrame hook for updates
-- Touch: onPointerDown, onPointerUp props on mesh
+## Mobile Optimization Standards
 
-**Game Patterns:**
-1. Simple: Basic shapes, touch interactions, score tracking
-2. Physics: Collision detection with bounds checking
-3. Animations: useFrame for position/rotation updates
-4. Mobile-first: Large touch targets, simple controls, clear visuals
+### Input
+- Use \`onPointerDown\` / \`onPointerUp\` for taps
+- Implement swiping using \`@use-gesture/react\` or pointer movement logic
+- Avoid \`onClick\` (latency) and mouse-specific events
 
-MOBILE & TYPESCRIPT REQUIREMENTS
-**Mobile Considerations:**
-- Optimize for phone performance
-- Use touch events (onPointerDown), not clicks
-- Keep geometry counts reasonable (< 1000 vertices)
-- Test expo-gl compatibility
+### Performance
+- Keep geometry simple (low vertex count)
+- Avoid heavy post-processing
 
-**TypeScript Requirements:**
-- All files must be .tsx (React) or .ts (utilities)
-- Properly type props, state, refs
-- Import types from '@react-three/fiber' for Three.js
+### Compatibility
+- Ensure all logic is compatible with **Expo-GL**
 
-TOOLS (Freestyle MCP)
-- "listDirectory": List directory contents
-- "readFile": Read file contents
-- "writeFile": Write file to repository
-- "editFile": Search and replace in files
-- "exec": Run commands (e.g., npm install)
-- "commitAndPush": Commit to git (REQUIRED after file changes!)
+---
 
-ERROR RECOVERY
-**Common Issues:**
-- "Module not found" → Use listDirectory to verify paths, fix imports
-- "File not found" → Verify writing to correct /template/ paths
-- Import errors → Use readFile to inspect actual file content
-- **Build/TypeScript errors from commitAndPush:**
-  1. Read files mentioned in error messages
-  2. Identify specific issues (typos, wrong imports, type errors)
-  3. Fix using writeFile or editFile
-  4. Commit again to verify fixes
-  5. Repeat until all errors resolved
+## Workflow Protocols
 
-**Remember:**
-- Never create multiple index.ts files
-- Keep imports direct and simple
-- Always fix errors before responding to user
-- Use listDirectory when unsure about file structure
+### Phase 1: Design (New Games Only)
 
- COMMUNICATION STYLE
-- Brief, focused responses
-- Explain WHAT the game does, not HOW it's coded
-- No code snippets (users see preview)
-- Use short paragraphs or bullet points
-- Focus on gameplay, controls, and player experience`,
+1. **Draft Design Document**  
+   Give user a short **Game Design Document (GDD)** containing:
+   - **Concept**: One-sentence pitch (Hypercasual focus)
+   - **Mechanics**: Core loop (e.g., "Tap to Jump"), win/lose conditions
+   - **Visual Style**: Color palette (hex codes or names) and primitive representations
+   Your GDD must be concise and focus on the MVP. Don't overcomplicate.
+
+2. **Save GDD**  
+   After outputting the full design to user, write the same design to \`design.md\` in the root directory too. You don't need to commit yet.
+
+3. **Wait for Approval**  
+   Start coding after user approves the GDD. If user requests changes, update \`design.md\` accordingly.
+
+---
+
+### Phase 2: Implementation (New & Existing)
+
+1. **Plan**  
+   Create a brief implementation plan (bullet points) in chat. Then directly start coding.
+
+2. **Verify Structure**  
+   Ensure target directories exist (e.g., \`/template/app/(tabs)/\`) using \`listDirectory\` only once.
+
+3. **Read Sparingly**
+    Read only essential files. Avoid re-reading files you modified.
+    When reading multiple files, always use \`readFiles\` with an array of paths in a single call rather than calling it multiple times.
+
+4. **Write & Commit**
+    Your main objective is to write code files. Write complete, bug-free, working files. When writing multiple files, always use \`writeFiles\` with an array of file objects in a single call rather than calling it multiple times. After each meaningful batch of changes, run \`commitAndPush\`. Your code should be compact, focusing on core functionality first.
+
+5. **Commit**  
+   Run \`commitAndPush\` after every meaningful file change or batch of changes.
+
+6. **Review**  
+   Briefly explain what you built and how it works.
+
+**CRITICAL - STRATEGIC READS**: 
+After user approves GDD:
+
+Read ONLY these (once per session, if you don't have them in conversation history):
+- \`package.json\` - to check dependencies
+- \`/template/app/(tabs)/\` structure - to verify entry point
+
+Do NOT read:
+- Example game files you didn't create
+- Components to "see patterns"
+- Files multiple times
+
+Then write code immediately.
+
+---
+
+## Technical Architecture & Structure
+
+### Preferred Tech Stack (Use these libraries' functionalities)
+
+- **State Management**: \`zustand\` (high-frequency game state like scores/health)
+- **Physics**: \`@react-three/rapier\`
+- **Audio**: \`expo-av\`
+- **Haptics**: \`expo-haptics\`
+- **Gestures**: \`@use-gesture/react\`
+
+---
+
+## Directory Standards
+
+- **Game Entry**  
+  \`/template/app/(tabs)/index.tsx\`
+
+- **Components**  
+  \`/template/components/\`
+
+- **Forbidden**
+  - Do not create \`index.ts\` barrel files
+  - Do not use export/import barrel patterns (Metro bundler issues)
+
+---
+
+## React-Three-Fiber Constraints
+
+- **Canvas Separation**  
+  The \`<Canvas>\` component must live in \`index.tsx\`  
+  Game logic (loops, physics) must live in a child component (e.g., \`<GameScene />\`)
+
+- **No Frame Loops in Parent**  
+  Never use \`useFrame\` or \`useThree\` inside the component that renders \`<Canvas>\`
+
+- **UI Overlay**
+  - Do not use 3D text for HUDs
+  - Use absolute-positioned React Native \`<View>\` and \`<Text>\` overlaying the Canvas
+
+---
+
+## Tools & Error Recovery
+### Approved Tools
+- \`listDirectory\` — verify folder structure
+- \`readFiles\` — read one or more file contents (only when necessary). ALWAYS pass an array of paths to read multiple files in a single call, never make separate calls for each file.
+- \`writeFiles\` — create or overwrite files. ALWAYS pass an array of file objects to write multiple files in a single call, never make separate calls for each file.
+- \`editFiles\` — make precise line edits. ALWAYS pass an array of file edit objects to edit multiple files in a single call, never make separate calls for each file.
+- \`commitAndPush\` — save changes
+- \`npmInstall\` — install dependencies
+- \`exec\` — run shell commands
+
+---
+
+### Error Recovery Protocol
+
+- **"Module not found"**
+  - Use \`listDirectory\` to verify the path
+  - If a package is missing update package.json and run \`npmInstall\`
+  - Do not ask the user
+
+- **"File not found"**
+  - Verify you are writing to the correct \`/template/\` path
+
+- **Build Errors**
+  - If \`commitAndPush\` fails:
+    1. Read the error log
+    2. Identify the specific file/line
+    3. Fix it using \`editFiles\` or \`writeFiles\`
+    4. Retry the commit`,
     });
 }
 
 /**
- * Tracks tool call patterns to detect potential infinite loops.
+ * Tracks tool call patterns to detect model pitfalls.
  * Monitors for:
  * - Writing to the same file 3+ times
- * - Repetitive write->read->write patterns
+ * - Reading the same file twice in a row
+ * - Whether files were modified and committed
  */
 class ToolCallTracker {
     private fileWriteCounts: Map<string, number> = new Map();
-    private recentOperations: Array<{ type: 'read' | 'write', path: string }> = [];
+    private recentOperations: Array<{ type: 'read' | 'write' | 'commit', path?: string }> = [];
     private warningIssued: boolean = false;
+    private hasFileModifications: boolean = false;
+    private hasCommitted: boolean = false;
+
+    hasWarningBeenIssued(): boolean {
+        return this.warningIssued;
+    }
+    
+    hasUncommittedChanges(): boolean {
+        return this.hasFileModifications && !this.hasCommitted;
+    }
+    
+    recordCommit(): void {
+        this.hasCommitted = true;
+        this.recentOperations.push({ type: 'commit' });
+        if (this.recentOperations.length > 10) {
+            this.recentOperations.shift();
+        }
+    }
     
     recordWrite(path: string): { shouldWarn: boolean; shouldStop: boolean; message?: string } {
-        // Track write count for this file
         const count = (this.fileWriteCounts.get(path) || 0) + 1;
         this.fileWriteCounts.set(path, count);
+        this.hasFileModifications = true;
         
-        // Track operation sequence
         this.recentOperations.push({ type: 'write', path });
         if (this.recentOperations.length > 10) {
             this.recentOperations.shift();
         }
         
-        // Check for same file written 3+ times
         if (count >= 4 && this.warningIssued) {
             return { 
                 shouldWarn: false, 
                 shouldStop: true, 
-                message: `🛑 LOOP DETECTED: You've written to "${path}" ${count} times. Stopping to prevent infinite loop. Please review your approach.`
+                message: `You've written to "${path}" ${count} times. Stopping your turn, Please review your approach.`
             };
         }
         
@@ -213,24 +277,7 @@ class ToolCallTracker {
             return { 
                 shouldWarn: true, 
                 shouldStop: false, 
-                message: `⚠️ WARNING: You've written to "${path}" ${count} times in this response. This may indicate a loop. Please complete your current task and respond to the user. If you continue this pattern, your response will be stopped.`
-            };
-        }
-        
-        // Check for write->read->write->read pattern
-        if (this.detectWriteReadLoop()) {
-            if (this.warningIssued) {
-                return {
-                    shouldWarn: false,
-                    shouldStop: true,
-                    message: `🛑 LOOP DETECTED: Repetitive write->read->write pattern detected. Stopping to prevent infinite loop.`
-                };
-            }
-            this.warningIssued = true;
-            return {
-                shouldWarn: true,
-                shouldStop: false,
-                message: `⚠️ WARNING: Detected repetitive write->read->write pattern. This may indicate a loop. Please finish your task and respond to the user. If this pattern continues, your response will be stopped.`
+                message: `You've written to "${path}" ${count} times in this response. Please complete your current task and respond to the user. If you continue this pattern, your response will be stopped.`
             };
         }
         
@@ -238,55 +285,35 @@ class ToolCallTracker {
     }
     
     recordRead(path: string): { shouldWarn: boolean; shouldStop: boolean; message?: string } {
-        this.recentOperations.push({ type: 'read', path });
-        if (this.recentOperations.length > 10) {
-            this.recentOperations.shift();
-        }
+        const previousRead = this.recentOperations.find(op => op.type === 'read' && op.path === path);
         
-        // Check for write->read->write->read pattern after a read
-        if (this.detectWriteReadLoop()) {
+        if (previousRead) {
             if (this.warningIssued) {
                 return {
                     shouldWarn: false,
                     shouldStop: true,
-                    message: `🛑 LOOP DETECTED: Repetitive write->read->write->read pattern detected. Stopping to prevent infinite loop.`
+                    message: `You're reading "${path}" too many times. Stopping your turn. Please review your approach.`,
                 };
             }
             this.warningIssued = true;
             return {
                 shouldWarn: true,
                 shouldStop: false,
-                message: `⚠️ WARNING: Detected repetitive write->read pattern on the same files. Please finish your task and respond to the user.`
+                message: `You're reading "${path}" again. You already have this file's contents, use that information instead of re-reading. Please finish your task and respond to the user. If you continue this pattern, your response will be stopped.`,
             };
+        }
+        
+        this.recentOperations.push({ type: 'read', path });
+        if (this.recentOperations.length > 10) {
+            this.recentOperations.shift();
         }
         
         return { shouldWarn: false, shouldStop: false };
     }
-    
-    private detectWriteReadLoop(): boolean {
-        // Need at least 4 operations to detect write->read->write->read
-        if (this.recentOperations.length < 4) return false;
-        
-        const recent = this.recentOperations.slice(-6);
-        
-        // Check for alternating write-read pattern on same file(s)
-        let writeReadPairs = 0;
-        for (let i = 0; i < recent.length - 1; i++) {
-            if (recent[i].type === 'write' && recent[i + 1].type === 'read') {
-                writeReadPairs++;
-            }
-        }
-        
-        // If we see 2+ write-read pairs in recent operations, it's likely a loop
-        return writeReadPairs >= 2;
-    }
-    
-    hasWarningBeenIssued(): boolean {
-        return this.warningIssued;
-    }
+
 }
 
-// Global tracker instance - will be reset per response
+// Global tracker instance, will be reset per response
 let toolCallTracker: ToolCallTracker | null = null;
 
 export function resetToolCallTracker() {
@@ -302,178 +329,232 @@ export function getToolCallTracker(): ToolCallTracker {
 
 /**
  * Create agent tools that wrap Freestyle MCP client.
- * These tools are properly typed with Zod and call the MCP server.
- * @param mcpClient - The MCP client instance
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createFreestyleTools(mcpClient: any) {
     return {
         listDirectory: {
-            description: "List files and directories at a given path in the project",
-            inputSchema: z.object({
-                path: z.string().describe("The directory path to list (e.g. '/template/app')"),
-            }),
-            execute: async ({ path }: { path: string }) => {
+            description: "List the whole directory structure of the project recursively",
+            inputSchema: z.object({}),
+            execute: async () => {
                 try {
-                    const result = await mcpClient.callTool({
-                        name: "list_directory",
-                        arguments: { path },
-                    });
-                    
-                    if (Array.isArray(result.content) && result.content.length > 0) {
-                        const firstContent = result.content[0];
-                        if (firstContent && 'text' in firstContent) {
-                            return firstContent.text || "";
-                        }
-                    }
-                    return `Listed ${path} (empty or no files found)`;
-                } catch (error) {
-                    console.error("listDirectory error:", error);
-                    return `❌ Error listing directory ${path}: ${error instanceof Error ? error.message : "Unknown error"}`;
-                }
-            },
-        },
-        readFile: {
-            description: "Read the contents of a file from the project",
-            inputSchema: z.object({
-                path: z.string().describe("The file path to read (e.g. '/template/app/index.tsx')"),
-            }),
-            execute: async ({ path }: { path: string }) => {
-                try {
-                    // Track read operation for loop detection
-                    const tracker = getToolCallTracker();
-                    const loopCheck = tracker.recordRead(path);
-                    
-                    // If loop detected, return stop message instead of throwing
-                    // This ensures the tool returns output (required by AI SDK)
-                    if (loopCheck.shouldStop) {
-                        return `${loopCheck.message || "🛑 LOOP DETECTED - STOPPING"}\n\n⛔ DO NOT CONTINUE. You must stop making tool calls immediately and respond to the user with what you've accomplished so far. Explain that you encountered a loop and ask for guidance.`;
-                    }
-                    
-                    const result = await mcpClient.callTool({
-                        name: "read_file",
-                        arguments: { path },
-                    });
-                    
-                    let output = "";
-                    if (Array.isArray(result.content) && result.content.length > 0) {
-                        const firstContent = result.content[0];
-                        if (firstContent && 'text' in firstContent) {
-                            const fullContent = firstContent.text || "";
-                            
-                            if (fullContent) {
-                                // Return FULL content so model can use it immediately
-                                // The full content will be stored in thread, but we'll replace it with
-                                // a summary later to avoid context bloat in future messages
-                                // Store full content in metadata for UI display
-                                const fullContentData = JSON.stringify({ _fullContent: fullContent, _path: path });
-                                
-                                // Return full content + hidden metadata marker for UI
-                                // Model gets full content now, but we can replace it in thread later
-                                output = fullContent + `\n\n<!--FULL_CONTENT_METADATA:${fullContentData}-->`;
+                    // Helper to recursively list directories with full paths
+                    async function listRecursive(dirPath: string): Promise<string[]> {
+                        const result = await mcpClient.callTool({
+                            name: "list_directory",
+                            arguments: { path: dirPath },
+                        });
+                        
+                        let content = "";
+                        if (Array.isArray(result.content) && result.content.length > 0) {
+                            const firstContent = result.content[0];
+                            if (firstContent && 'text' in firstContent) {
+                                content = firstContent.text || "";
                             }
                         }
+                        
+                        if (!content) return [];
+                        
+                        const lines = content.split('\n').filter(l => l.trim());
+                        let paths: string[] = [];
+                        
+                        for (const line of lines) {
+                            // Skip total line and empty lines
+                            if (line.startsWith('total ') || !line.trim()) continue;
+                            
+                            // Parse ls -la output format
+                            // Format: drwxr-xr-x   2 root root   4096 Dec  5 10:53 .github
+                            const parts = line.split(/\s+/);
+                            if (parts.length < 9) continue;
+                            
+                            // The filename is the last part (index 8+)
+                            const itemName = parts.slice(8).join(' ');
+                            
+                            // Skip . and .. entries
+                            if (itemName === '.' || itemName === '..') continue;
+                            
+                            // Check if it's a directory (first char is 'd')
+                            const isDirectory = parts[0].startsWith('d');
+                            
+                            const fullPath = `${dirPath}/${itemName}`.replace(/\/+/g, '/');
+                            
+                            if (isDirectory) {
+                                paths.push(fullPath + '/');
+                                // Recursively list subdirectories, but skip common ones to avoid huge output
+                                if (itemName !== 'node_modules' && itemName !== '.git') {
+                                    const subPaths = await listRecursive(fullPath);
+                                    paths.push(...subPaths);
+                                }
+                            } else {
+                                paths.push(fullPath);
+                            }
+                        }
+                        
+                        return paths;
                     }
                     
-                    if (!output) {
-                        output = `✅ Read ${path} (file is empty or not found)`;
-                    }
-                    
-                    // Add warning if loop pattern detected
-                    if (loopCheck.shouldWarn && loopCheck.message) {
-                        output = `${loopCheck.message}\n\n${output}`;
-                    }
-                    
-                    return output;
+                    const allPaths = await listRecursive('/template');
+                    // Sort paths for better readability
+                    allPaths.sort();
+                    const output = allPaths.join('\n');
+                    return output || `Listed /template (empty or no files found)`;
                 } catch (error) {
-                    console.error("readFile error:", error);
-                    return `❌ Error reading file ${path}: ${error instanceof Error ? error.message : "Unknown error"}`;
+                    console.error("listDirectory error:", error);
+                    return `Error listing directory /template: ${error instanceof Error ? error.message : "Unknown error"}`;
                 }
             },
         },
-        writeFile: {
-            description: "Write content to a file in the project. Creates the file if it doesn't exist.",
+        readFiles: {
+            description: "Read the contents of one or more files from the project. CRITICAL: Always read multiple files in a single call by passing an array of paths. Never call this tool multiple times for individual files - batch them together.",
             inputSchema: z.object({
-                path: z.string().describe("The file path to write (e.g. '/template/app/index.tsx')"),
-                content: z.string().describe("The full file content to write"),
+                paths: z.array(z.string()).describe("Array of file paths to read (e.g. ['/template/app/index.tsx', '/template/components/Player.tsx']). Always include ALL files you need to read in a single array."),
             }),
-            execute: async ({ path, content }: { path: string; content: string }) => {
+            execute: async ({ paths }: { paths: string[] }) => {
                 try {
-                    // Track write operation for loop detection
                     const tracker = getToolCallTracker();
-                    const loopCheck = tracker.recordWrite(path);
+                    const results: Array<{ path: string; content?: string; error?: string; warning?: string }> = [];
                     
-                    // If loop detected, return stop message instead of throwing
-                    // This ensures the tool returns output (required by AI SDK)
-                    // Note: We DON'T write the file when stopping - just return the message
-                    if (loopCheck.shouldStop) {
-                        return `${loopCheck.message || "🛑 LOOP DETECTED - STOPPING"}\n\n⛔ FILE NOT WRITTEN. You must stop making tool calls immediately and respond to the user with what you've accomplished so far. Explain that you encountered a loop and ask for guidance.`;
+                    for (const path of paths) {
+                        const readCheck = tracker.recordRead(path);
+                        if (readCheck.shouldStop) {
+                            results.push({ path, error: readCheck.message });
+                            continue;
+                        }
+                        
+                        try {
+                            const result = await mcpClient.callTool({
+                                name: "read_file",
+                                arguments: { path },
+                            });
+                            
+                            let content = "";
+                            if (Array.isArray(result.content) && result.content.length > 0) {
+                                const firstContent = result.content[0];
+                                if (firstContent && 'text' in firstContent) {
+                                    content = firstContent.text || "";
+                                }
+                            }
+                            
+                            const fileResult: any = { path, content: content || "" };
+                            
+                            if (readCheck.shouldWarn && readCheck.message) {
+                                fileResult.warning = readCheck.message;
+                            }
+                            
+                            results.push(fileResult);
+                        } catch (error) {
+                            results.push({ 
+                                path, 
+                                error: `Error reading: ${error instanceof Error ? error.message : "Unknown error"}` 
+                            });
+                        }
                     }
                     
-                    await mcpClient.callTool({
-                        name: "write_file",
-                        arguments: { path, content },
-                    });
-                    
-                    // Return concise summary for model context (saves tokens)
-                    // Note: Full content is in tool call arguments (content parameter) for UI display
-                    const lines = content.split('\n');
-                    const lineCount = lines.length;
-                    const charCount = content.length;
-                    
-                    // Extract key information for summary
-                    const importLines = lines.filter((line: string) => line.trim().startsWith('import')).slice(0, 3);
-                    const exportLines = lines.filter((line: string) => line.includes('export')).slice(0, 2);
-                    const mainComponent = lines.find((line: string) => 
-                        line.includes('export default') || 
-                        line.includes('export function') ||
-                        line.includes('export const')
-                    );
-                    
-                    let summary = `✅ Wrote ${path}\n📊 ${lineCount} lines, ${charCount} characters\n`;
-                    
-                    if (importLines.length > 0) {
-                        summary += `Imports: ${importLines.join(', ').substring(0, 150)}...\n`;
-                    }
-                    if (exportLines.length > 0) {
-                        summary += `Exports: ${exportLines.join(', ').substring(0, 150)}...\n`;
-                    }
-                    if (mainComponent) {
-                        summary += `Main: ${mainComponent.substring(0, 100)}...\n`;
-                    }
-                    
-                    // Include first 5 lines for context
-                    summary += `\nFirst 5 lines:\n${lines.slice(0, 5).join('\n')}\n`;
-                    if (lines.length > 5) {
-                        summary += `\n... (${lines.length - 5} more lines written) ...\n`;
-                    }
-                    
-                    // Add warning if loop pattern detected
-                    if (loopCheck.shouldWarn && loopCheck.message) {
-                        summary = `${loopCheck.message}\n\n${summary}`;
-                    }
-                    
-                    return summary;
+                    // Return structured data for UI to parse
+                    return { _multiFileRead: true, files: results };
                 } catch (error) {
-                    console.error("writeFile error:", error);
-                    return `❌ Error writing file ${path}: ${error instanceof Error ? error.message : "Unknown error"}`;
+                    console.error("readFiles error:", error);
+                    return `Error reading files: ${error instanceof Error ? error.message : "Unknown error"}`;
+                }
+            },
+        },
+        writeFiles: {
+            description: "Write complete content to one or more files in the project. Creates files if they don't exist, or overwrites them entirely. CRITICAL: Always write multiple files in a single call by passing an array of file objects. Never call this tool multiple times for individual files - batch them together. Use this for creating new files or making large changes to existing files. For small, targeted edits to existing files, use editFile instead.",
+            inputSchema: z.object({
+                files: z.array(z.object({
+                    path: z.string().describe("The file path to write (e.g. '/template/app/index.tsx')"),
+                    content: z.string().describe("The full file content to write"),
+                })).describe("Array of file objects to write. Always include ALL files you need to write in a single array."),
+            }),
+            execute: async ({ files }: { files: Array<{ path: string; content: string }> }) => {
+                try {
+                    const tracker = getToolCallTracker();
+                    const results: Array<{ path: string; success?: boolean; error?: string; warning?: string; lines?: number; chars?: number }> = [];
+                    
+                    // Check for duplicates within this batch
+                    const pathCounts = new Map<string, number>();
+                    const seenPaths = new Set<string>();
+                    
+                    for (const file of files) {
+                        pathCounts.set(file.path, (pathCounts.get(file.path) || 0) + 1);
+                    }
+                    
+                    for (const file of files) {
+                        // Skip if we've already processed this path (only process the last occurrence)
+                        const count = pathCounts.get(file.path) || 1;
+                        const isFirstOccurrence = !seenPaths.has(file.path);
+                        seenPaths.add(file.path);
+                        
+                        // If this is a duplicate and not the last occurrence, skip it with a warning
+                        if (count > 1 && isFirstOccurrence) {
+                            results.push({
+                                path: file.path,
+                                success: false,
+                                warning: `Skipped: ${file.path} appears ${count} times in this batch. Only processing the last occurrence.`
+                            });
+                            continue;
+                        } else if (count > 1 && seenPaths.size < files.length) {
+                            // This is a middle duplicate, skip it silently
+                            continue;
+                        }
+                        const writeCheck = tracker.recordWrite(file.path);
+                        if (writeCheck.shouldStop) {
+                            results.push({ path: file.path, success: false, error: writeCheck.message });
+                            continue;
+                        }
+                        
+                        try {
+                            await mcpClient.callTool({
+                                name: "write_file",
+                                arguments: { path: file.path, content: file.content },
+                            });
+                            
+                            const lines = file.content.split('\n');
+                            const lineCount = lines.length;
+                            const charCount = file.content.length;
+                            
+                            const fileResult: any = { 
+                                path: file.path, 
+                                success: true, 
+                                lines: lineCount, 
+                                chars: charCount 
+                            };
+                            
+                            // Add tracker warnings if any
+                            if (writeCheck.shouldWarn && writeCheck.message) {
+                                fileResult.warning = writeCheck.message;
+                            }
+                            
+                            results.push(fileResult);
+                        } catch (error) {
+                            results.push({ 
+                                path: file.path, 
+                                success: false,
+                                error: `Error writing: ${error instanceof Error ? error.message : "Unknown error"}` 
+                            });
+                        }
+                    }
+                    
+                    // Return structured data for UI to parse
+                    return { _multiFileWrite: true, files: results };
+                } catch (error) {
+                    console.error("writeFiles error:", error);
+                    return `Error writing files: ${error instanceof Error ? error.message : "Unknown error"}`;
                 }
             },
         },
         commitAndPush: {
-            description: "Commit all changes to git with a descriptive message. ALWAYS use this after creating or modifying files. This will automatically check for TypeScript/build errors and report them if found.",
-            inputSchema: z.object({
-                message: z.string().describe("A descriptive commit message (e.g. 'Created spinning cube game')"),
-            }),
-            execute: async ({ message }: { message: string }) => {
+            description: "Commit all changes to git. Always use this after completing your work.",
+            inputSchema: z.object({ }),
+            execute: async () => {
                 try {
-                    // First, commit the changes
+                    getToolCallTracker().recordCommit();
+                    
                     const commitResult = await mcpClient.callTool({
                         name: "git_commit_and_push",
-                        arguments: { message },
+                        arguments: { message: "committed" },
                     });
                     
-                    let commitOutput = `✅ Committed: ${message}`;
+                    let commitOutput = `Committed changes successfully.`;
                     if (Array.isArray(commitResult.content) && commitResult.content.length > 0) {
                         const firstContent = commitResult.content[0];
                         if (firstContent && 'text' in firstContent) {
@@ -481,9 +562,7 @@ export function createFreestyleTools(mcpClient: any) {
                         }
                     }
 
-                    // Check for TypeScript/build errors after committing
                     try {
-                        // Wait a moment for the dev server to process the changes
                         await new Promise(resolve => setTimeout(resolve, 2000));
                         
                         const errors: string[] = [];
@@ -517,11 +596,11 @@ export function createFreestyleTools(mcpClient: any) {
                         }
                         
                         // Check 2: Babel/JSX syntax errors using npx babel
-                        // This catches syntax errors that TypeScript might miss
+                        // Configure Babel with module-resolver to handle path aliases (@/...)
                         const babelResult = await mcpClient.callTool({
                             name: "exec",
                             arguments: { 
-                                command: "cd /template && find . -name '*.tsx' -o -name '*.ts' | grep -v node_modules | head -20 | xargs -I {} sh -c 'npx babel {} --presets=@babel/preset-typescript,@babel/preset-react -o /dev/null 2>&1 || echo \"BABEL_ERROR_IN: {}\"' 2>&1 | grep -E '(SyntaxError|Error:|BABEL_ERROR_IN)' | head -30" 
+                                command: "cd /template && find . -name '*.tsx' -o -name '*.ts' | grep -v node_modules | head -20 | xargs -I {} sh -c 'npx babel {} --presets=@babel/preset-typescript,@babel/preset-react --plugins=[[\"module-resolver\",{\"alias\":{\"@\":\"./\"}}]] -o /dev/null 2>&1 || echo \"BABEL_ERROR_IN: {}\"' 2>&1 | grep -E '(SyntaxError|Error:|BABEL_ERROR_IN)' | grep -v 'Cannot find module' | head -30" 
                             },
                         });
                         
@@ -561,43 +640,312 @@ export function createFreestyleTools(mcpClient: any) {
                         
                         // If any errors were found, report them
                         if (errors.length > 0) {
-                            return `${commitOutput}\n\n❌ BUILD ERRORS DETECTED:\n\n${errors.join('\n\n')}\n\n⚠️ CRITICAL: You must fix these errors immediately. Read the affected files using readFile, identify the issues (look for syntax errors like missing commas, brackets, or unexpected tokens), and fix them using writeFile, then commit again.`;
+                            return `${commitOutput}\n\nBUILD ERRORS DETECTED:\n\n${errors.join('\n\n')}\n\nCRITICAL: You must fix these errors immediately. Identify the issues (look for syntax errors like missing commas, brackets, or unexpected tokens), and fix them using writeFiles or editFiles, then commit again.`;
                         }
                         
                     } catch (error) {
                         // If error checking fails, still return the commit success
                         console.error("Error checking for build errors:", error);
-                    }
-                    
+                    }                 
                     return commitOutput;
                 } catch (error) {
                     console.error("commitAndPush error:", error);
-                    return `❌ Error committing: ${error instanceof Error ? error.message : "Unknown error"}`;
+                    return `Error committing: ${error instanceof Error ? error.message : "Unknown error"}`;
                 }
             },
         },
-        exec: {
-            description: "Execute a shell command in the project directory (e.g. npm install)",
+        editFiles: {
+            description: "Make line-based edits to one or more existing files for small, targeted changes (e.g., fixing bugs, updating a few lines, changing functions). Always edit multiple files in a single call by passing an array of file edit objects. Don't call this tool multiple times for individual files, batch them together. Each edit replaces exact line sequences with new content. For large changes or rewriting significant portions of files, use writeFiles instead.",
             inputSchema: z.object({
-                command: z.string().describe("The command to execute"),
+                files: z.array(z.object({
+                    path: z.string().describe("The file path to edit (e.g. '/template/app/index.tsx')"),
+                    edits: z.array(z.object({
+                        oldText: z.string().describe("The exact text to replace (must match existing lines exactly)"),
+                        newText: z.string().describe("The new text to insert in place of oldText"),
+                    })).describe("Array of edit operations to apply to this file"),
+                })).describe("Array of files to edit. Include ALL files you need to edit in a single array."),
             }),
-            execute: async ({ command }: { command: string }) => {
+            execute: async ({ files }: { files: Array<{ path: string; edits: Array<{ oldText: string; newText: string }> }> }) => {
+                try {
+                    const tracker = getToolCallTracker();
+                    const results: Array<{ path: string; success?: boolean; error?: string; editCount?: number; warning?: string }> = [];
+                    
+                    // Group files by path to detect duplicates and check for conflicts
+                    const filesByPath = new Map<string, Array<{ index: number; edits: Array<{ oldText: string; newText: string }> }>>();
+                    
+                    files.forEach((file, index) => {
+                        if (!filesByPath.has(file.path)) {
+                            filesByPath.set(file.path, []);
+                        }
+                        filesByPath.get(file.path)!.push({ index, edits: file.edits });
+                    });
+                    
+                    // Check for conflicts: if same file appears multiple times, check if oldText overlaps
+                    const pathsWithConflicts = new Set<string>();
+                    for (const [path, occurrences] of filesByPath.entries()) {
+                        if (occurrences.length > 1) {
+                            // Get all oldText strings for this path
+                            const allOldTexts = occurrences.flatMap(occ => occ.edits.map(e => e.oldText));
+                            
+                            // Check for overlapping oldText
+                            for (let i = 0; i < allOldTexts.length; i++) {
+                                for (let j = i + 1; j < allOldTexts.length; j++) {
+                                    const text1 = allOldTexts[i];
+                                    const text2 = allOldTexts[j];
+                                    // Check if one contains the other
+                                    if (text1.includes(text2) || text2.includes(text1)) {
+                                        pathsWithConflicts.add(path);
+                                        break;
+                                    }
+                                }
+                                if (pathsWithConflicts.has(path)) break;
+                            }
+                        }
+                    }
+                    
+                    const processedPaths = new Set<string>();
+                    
+                    for (let i = 0; i < files.length; i++) {
+                        const file = files[i];
+                        const occurrences = filesByPath.get(file.path) || [];
+                        const isFirstOccurrence = !processedPaths.has(file.path);
+                        const hasConflict = pathsWithConflicts.has(file.path);
+                        
+                        // If this path has conflicts, only process the last occurrence and warn on first
+                        if (occurrences.length > 1 && hasConflict) {
+                            const isLastOccurrence = i === occurrences[occurrences.length - 1].index;
+                            
+                            if (isFirstOccurrence) {
+                                results.push({
+                                    path: file.path,
+                                    success: false,
+                                    warning: `Skipped: ${file.path} appears ${occurrences.length} times with conflicting edits. Only processing the last occurrence.`
+                                });
+                                processedPaths.add(file.path);
+                                if (!isLastOccurrence) continue;
+                            } else if (!isLastOccurrence) {
+                                continue; // Skip middle duplicates silently
+                            }
+                        } else if (occurrences.length > 1 && !hasConflict && isFirstOccurrence) {
+                            // Multiple occurrences but no conflicts - we can merge them
+                            processedPaths.add(file.path);
+                            
+                            // Collect all edits for this path
+                            const allEdits = occurrences.flatMap(occ => files[occ.index].edits);
+                            
+                            const writeCheck = tracker.recordWrite(file.path);
+                            if (writeCheck.shouldStop) {
+                                results.push({ path: file.path, success: false, error: writeCheck.message });
+                                continue;
+                            }
+                            
+                            try {
+                                const result = await mcpClient.callTool({
+                                    name: "edit_file",
+                                    arguments: { 
+                                        path: file.path, 
+                                        edits: allEdits.map(edit => ({
+                                            oldText: edit.oldText,
+                                            newText: edit.newText,
+                                        }))
+                                    },
+                                });
+                                
+                                const fileResult: any = { 
+                                    path: file.path, 
+                                    success: true, 
+                                    editCount: allEdits.length,
+                                };
+                                
+                                if (writeCheck.shouldWarn && writeCheck.message) {
+                                    fileResult.warning = writeCheck.message;
+                                }
+                                
+                                results.push(fileResult);
+                            } catch (error) {
+                                results.push({ 
+                                    path: file.path, 
+                                    success: false,
+                                    error: `Error editing: ${error instanceof Error ? error.message : "Unknown error"}` 
+                                });
+                            }
+                            continue;
+                        } else if (processedPaths.has(file.path)) {
+                            // Already processed (either merged or last occurrence)
+                            continue;
+                        }
+                        
+                        // Normal processing for single occurrence or last occurrence of conflict
+                        processedPaths.add(file.path);
+                        const writeCheck = tracker.recordWrite(file.path);
+                        if (writeCheck.shouldStop) {
+                            results.push({ path: file.path, success: false, error: writeCheck.message });
+                            continue;
+                        }
+                        
+                        try {
+                            const result = await mcpClient.callTool({
+                                name: "edit_file",
+                                arguments: { 
+                                    path: file.path, 
+                                    edits: file.edits.map(edit => ({
+                                        oldText: edit.oldText,
+                                        newText: edit.newText,
+                                    }))
+                                },
+                            });
+                            
+                            let message = "";
+                            if (Array.isArray(result.content) && result.content.length > 0) {
+                                const firstContent = result.content[0];
+                                if (firstContent && 'text' in firstContent) {
+                                    message = firstContent.text || "";
+                                }
+                            }
+                            
+                            const fileResult: any = { 
+                                path: file.path, 
+                                success: true, 
+                                editCount: file.edits.length,
+                            };
+                            
+                            // Add tracker warnings if any
+                            if (writeCheck.shouldWarn && writeCheck.message) {
+                                fileResult.warning = writeCheck.message;
+                            }
+                            
+                            results.push(fileResult);
+                        } catch (error) {
+                            results.push({ 
+                                path: file.path, 
+                                success: false,
+                                error: `Error editing: ${error instanceof Error ? error.message : "Unknown error"}` 
+                            });
+                        }
+                    }
+                    
+                    // Return structured data for UI to parse
+                    return { _multiFileEdit: true, files: results };
+                } catch (error) {
+                    console.error("editFiles error:", error);
+                    return `Error editing files: ${error instanceof Error ? error.message : "Unknown error"}`;
+                }
+            },
+        },
+        searchFiles: {
+            description: "Search for files matching a pattern in the project filesystem",
+            inputSchema: z.object({
+                path: z.string().describe("The directory path to search in (e.g. '/template')"),
+                pattern: z.string().describe("The glob pattern to match (e.g. '**/*.tsx' for all tsx files)"),
+                excludePatterns: z.array(z.string()).optional().describe("Optional patterns to exclude (e.g. ['node_modules/**'])"),
+            }),
+            execute: async ({ path, pattern, excludePatterns }: { path: string; pattern: string; excludePatterns?: string[] }) => {
                 try {
                     const result = await mcpClient.callTool({
-                        name: "exec",
-                        arguments: { command },
+                        name: "search_files",
+                        arguments: { path, pattern, excludePatterns },
                     });
                     
                     if (Array.isArray(result.content) && result.content.length > 0) {
                         const firstContent = result.content[0];
                         if (firstContent && 'text' in firstContent) {
-                            return firstContent.text || `✅ Executed: ${command}`;
+                            return firstContent.text || `Searched for ${pattern} in ${path}`;
                         }
                     }
-                    return `✅ Executed: ${command}`;
+                    return `Searched for ${pattern} in ${path}`;
+                } catch (error) {
+                    console.error("searchFiles error:", error);
+                    return `Error searching files in ${path}: ${error instanceof Error ? error.message : "Unknown error"}`;
+                }
+            },
+        },
+        createDirectory: {
+            description: "Create a new directory in the project filesystem",
+            inputSchema: z.object({
+                path: z.string().describe("The directory path to create (e.g. '/template/components/game')"),
+            }),
+            execute: async ({ path }: { path: string }) => {
+                try {
+                    await mcpClient.callTool({
+                        name: "create_directory",
+                        arguments: { path },
+                    });
+                    return `Created directory ${path}`;
+                } catch (error) {
+                    console.error("createDirectory error:", error);
+                    return `Error creating directory ${path}: ${error instanceof Error ? error.message : "Unknown error"}`;
+                }
+            },
+        },
+        npmInstall: {
+            description: "Install npm dependencies. Run this after modifying package.json or when packages need to be installed/updated.",
+            inputSchema: z.object({}),
+            execute: async () => {
+                try {
+                    const result = await mcpClient.callTool({
+                        name: "npm_install",
+                        arguments: {},
+                    });
+                    
+                    if (Array.isArray(result.content) && result.content.length > 0) {
+                        const firstContent = result.content[0];
+                        if (firstContent && 'text' in firstContent) {
+                            return firstContent.text || `npm install completed`;
+                        }
+                    }
+                    return `npm install completed`;
+                } catch (error) {
+                    console.error("npmInstall error:", error);
+                    return `Error running npm install: ${error instanceof Error ? error.message : "Unknown error"}`;
+                }
+            },
+        },
+        npmRunLint: {
+            description: "Run the linter (eslint) to check for code quality issues",
+            inputSchema: z.object({}),
+            execute: async () => {
+                try {
+                    const result = await mcpClient.callTool({
+                        name: "npm_run_lint",
+                        arguments: {},
+                    });
+                    
+                    if (Array.isArray(result.content) && result.content.length > 0) {
+                        const firstContent = result.content[0];
+                        if (firstContent && 'text' in firstContent) {
+                            return firstContent.text || `Linting completed`;
+                        }
+                    }
+                    return `Linting completed`;
+                } catch (error) {
+                    console.error("npmRunLint error:", error);
+                    return `Error running linter: ${error instanceof Error ? error.message : "Unknown error"}`;
+                }
+            },
+        },
+        exec: {
+            description: "Execute a shell command in the project directory. Use other specialized tools when available (npmInstall, npmRunLint, etc.)",
+            inputSchema: z.object({
+                command: z.string().describe("The command to execute"),
+                cwd: z.string().optional().describe("Optional working directory for the command"),
+            }),
+            execute: async ({ command, cwd }: { command: string; cwd?: string }) => {
+                try {
+                    const result = await mcpClient.callTool({
+                        name: "exec",
+                        arguments: { command, cwd },
+                    });
+                    
+                    if (Array.isArray(result.content) && result.content.length > 0) {
+                        const firstContent = result.content[0];
+                        if (firstContent && 'text' in firstContent) {
+                            return firstContent.text || `Executed: ${command}`;
+                        }
+                    }
+                    return `Executed: ${command}`;
                 } catch (error) {
                     console.error("exec error:", error);
-                    return `❌ Error executing command "${command}": ${error instanceof Error ? error.message : "Unknown error"}`;
+                    return `Error executing command "${command}": ${error instanceof Error ? error.message : "Unknown error"}`;
                 }
             },
         },

@@ -8,8 +8,12 @@
  * @module
  */
 
+import type * as ApiKeyResolver from "../ApiKeyResolver.js";
+import type * as ChatHelper from "../ChatHelper.js";
+import type * as ContextHandler from "../ContextHandler.js";
 import type * as agent from "../agent.js";
 import type * as chat from "../chat.js";
+import type * as config from "../config.js";
 import type * as crons from "../crons.js";
 import type * as crypto from "../crypto.js";
 import type * as users from "../users.js";
@@ -21,8 +25,12 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  ApiKeyResolver: typeof ApiKeyResolver;
+  ChatHelper: typeof ChatHelper;
+  ContextHandler: typeof ContextHandler;
   agent: typeof agent;
   chat: typeof chat;
+  config: typeof config;
   crons: typeof crons;
   crypto: typeof crypto;
   users: typeof users;

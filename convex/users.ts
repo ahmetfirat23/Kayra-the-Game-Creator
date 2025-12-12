@@ -1,29 +1,51 @@
-import { query, mutation, action, internalMutation } from "./_generated/server";
+import { query, mutation, action, internalMutation, internalQuery, QueryCtx, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import { CONFIG } from "./config";
+import { Doc } from "./_generated/dataModel";
 
 /**
- * Get or create user from Clerk ID
+ * Helper function to check if a user is in an active Pro period.
+ * Pro period is active if subscription is active or canceled but period hasn't ended yet.
  */
-export const getCurrentUser = query({
-    args: {},
-    handler: async (ctx) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) {
-            return null;
-        }
-
-        const user = await ctx.db
-            .query("users")
-            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-            .first();
-
-        return user;
-    },
-});
+export function isInProPeriod(user: Doc<"users">): boolean {
+    const now = Date.now();
+    return (
+        (user.proSubscriptionStatus === "active" ||
+            user.proSubscriptionStatus === "canceled") &&
+        typeof user.proCurrentPeriodEnd === "number" &&
+        now <= user.proCurrentPeriodEnd
+    );
+}
 
 /**
- * Sync user from Clerk (called on login/page load)
+ * Helper function to get the current authenticated user from context.
+ * Used internally by mutations and queries.
+ */
+export async function getUserFromContext(ctx: QueryCtx | MutationCtx): Promise<Doc<"users">> {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+        throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+        .first();
+
+    if (!user) {
+        console.error("Critical: User not found in getUserFromContext", { clerkId: identity.subject });
+        throw new Error("An error occurred. Please refresh the page.");
+    }
+
+    return user;
+}
+
+/**
+ * Sync user from Clerk
+ * Create the user in our database after first login via Clerk
+ * Update email/name if changed in Clerk
+ * Returns the user ID
  */
 export const syncUser = mutation({
     args: {},
@@ -31,16 +53,21 @@ export const syncUser = mutation({
         const identity = await ctx.auth.getUserIdentity();
         
         if (!identity) {
-            return null;
+            throw new Error("Not authenticated");
         }
 
         const existingUser = await ctx.db
             .query("users")
             .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
             .first();
+        
+        // If user changed their email or name in Clerk, update it here
+        const needsUpdateFromClerk = existingUser && (
+            existingUser.email !== (identity.email || existingUser.email) ||
+            existingUser.name !== (identity.name || existingUser.name)
+        );
 
-        if (existingUser) {
-            // Update existing user
+        if (needsUpdateFromClerk) {
             await ctx.db.patch(existingUser._id, {
                 email: identity.email || existingUser.email,
                 name: identity.name || existingUser.name,
@@ -48,8 +75,8 @@ export const syncUser = mutation({
                 tier: existingUser.tier || (existingUser.isAdmin ? "admin" : "free"),
             });
             return existingUser._id;
-        } else {
-            // Create new user
+        } 
+        else if (!existingUser) {
             const userId = await ctx.db.insert("users", {
                 clerkId: identity.subject,
                 email: identity.email || "",
@@ -63,7 +90,6 @@ export const syncUser = mutation({
 
 /**
  * Validate and update user's OpenAI API key
- * This is an action because it needs to make an HTTP request to OpenAI and use Node.js crypto
  */
 export const updateApiKey = action({
     args: {
@@ -75,10 +101,15 @@ export const updateApiKey = action({
             throw new Error("Not authenticated");
         }
 
+        // Basic input validation
+        if (!args.apiKey || args.apiKey.length < CONFIG.MIN_API_KEY_LENGTH || args.apiKey.length > CONFIG.MAX_API_KEY_LENGTH) {
+            throw new Error("Invalid API key format");
+        }
+        
         // Validate the API key by calling OpenAI with a timeout
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+            const timeoutId = setTimeout(() => controller.abort(), CONFIG.API_VALIDATION_TIMEOUT_MS);
 
             const response = await fetch("https://api.openai.com/v1/models", {
                 method: "GET",
@@ -92,16 +123,12 @@ export const updateApiKey = action({
 
             if (!response.ok) {
                 const errorText = await response.text();
-                let errorMessage = "Invalid API key";
-                
-                try {
-                    const errorJson = JSON.parse(errorText);
-                    errorMessage = errorJson.error?.message || errorMessage;
-                } catch {
-                    // If parsing fails, use default message
-                }
-                
-                throw new Error(errorMessage);
+                console.error("OpenAI API key validation failed:", {
+                    status: response.status,
+                    statusText: response.statusText,
+                    errorText,
+                });
+                throw new Error("Invalid API key");
             }
 
             // Encrypt the API key before saving
@@ -109,45 +136,28 @@ export const updateApiKey = action({
                 apiKey: args.apiKey,
             });
 
-            // Key is valid and encrypted, save it via internal mutation
             await ctx.runMutation(internal.users.saveApiKey, {
-                clerkId: identity.subject,
-                apiKey: encryptedKey, // Save encrypted version
+                apiKey: encryptedKey,
             });
         } catch (error) {
-            if (error instanceof Error) {
-                if (error.name === "AbortError") {
-                    throw new Error("Validation timed out. Please check your internet connection and try again.");
-                }
-                throw new Error(error.message);
-            }
-            throw new Error("Failed to validate API key. Please check your key and try again.");
+            console.error("API key validation error:", error);
+            throw new Error("Failed to save API key");
         }
     },
 });
 
 /**
- * Internal mutation to save API key (called after validation and encryption)
+ * Internal mutation to save API key
  */
 export const saveApiKey = internalMutation({
     args: {
-        clerkId: v.string(),
-        apiKey: v.string(), // This is already encrypted by the action
+        apiKey: v.string(), // Encrypted API key
     },
     handler: async (ctx, args) => {
-        const user = await ctx.db
-            .query("users")
-            .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
-            .first();
-
-        if (!user) {
-            throw new Error("User not found");
-        }
-
-        // Save the encrypted key directly (already encrypted by action)
+        const user = await getUserFromContext(ctx);
         await ctx.db.patch(user._id, {
             openaiApiKey: args.apiKey,
-        });
+        });     
     },
 });
 
@@ -157,60 +167,40 @@ export const saveApiKey = internalMutation({
 export const deleteApiKey = mutation({
     args: {},
     handler: async (ctx) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) {
-            throw new Error("Not authenticated");
-        }
-        const user = await ctx.db
-            .query("users")
-            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-            .first();
-
-        if (!user) {
-            throw new Error("User not found");
-        }
-
+        const user = await getUserFromContext(ctx);
         await ctx.db.patch(user._id, { openaiApiKey: undefined });
     },
 });
 
 /**
- * Get user's API key (or fallback to system key for admin)
+ * Get user's API key status (whether they have a key, admin status, etc.)
  */
-export const getApiKey = query({
+export const getApiKeyStatus = query({
     args: {},
     handler: async (ctx) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) {
-            return null;
-        }
+        try {
+            const user = await getUserFromContext(ctx);
 
-        const user = await ctx.db
-            .query("users")
-            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-            .first();
+            // Admin users can use system API key
+            if (user.isAdmin) {
+                return {
+                    hasKey: true,
+                    isAdmin: true,
+                    isFreeUser: false,
+                    remainingMessages: null,
+                };
+            }
 
-        if (!user) {
-            return null;
-        }
-
-        // Admin users can use system API key
-        if (user.isAdmin) {
+            // Regular users must provide their own key
             return {
-                hasKey: true,
-                isAdmin: true,
+                hasKey: !!user.openaiApiKey,
+                isAdmin: false,
                 isFreeUser: false,
                 remainingMessages: null,
             };
+        } catch {
+            return null;
         }
-
-        // Regular users must provide their own key
-        return {
-            hasKey: !!user.openaiApiKey,
-            isAdmin: false,
-            isFreeUser: false,
-            remainingMessages: null,
-        };
     },
 });
 
@@ -221,78 +211,59 @@ export const getApiKey = query({
 export const getRemainingMessages = query({
     args: {},
     handler: async (ctx) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) {
-            return null;
-        }
+        try {
+            const user = await getUserFromContext(ctx);
 
-        const user = await ctx.db
-            .query("users")
-            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-            .first();
+            const inProPeriod = isInProPeriod(user);
 
-        if (!user) {
-            return null;
-        }
+            // Admin, BYOK, or users in an active Pro period have no daily free-message limit
+            if (user.isAdmin || user.openaiApiKey || inProPeriod) {
+                return {
+                    isFreeUser: false,
+                    remainingMessages: null,
+                    hasKey: !!user.openaiApiKey,
+                    isAdmin: !!user.isAdmin,
+                };
+            }
 
-        const now = Date.now();
-        const inProPeriod =
-            (user.proSubscriptionStatus === "active" ||
-                user.proSubscriptionStatus === "canceled") &&
-            typeof user.proCurrentPeriodEnd === "number" &&
-            now <= user.proCurrentPeriodEnd;
-
-        // Admin, BYOK, or users in an active Pro period have no daily free-message limit
-        if (user.isAdmin || user.openaiApiKey || inProPeriod) {
+            // Free user has daily limit
+            const messageCount = user.dailyMessageCount || 0;      
             return {
-                isFreeUser: false,
-                remainingMessages: null,
-                hasKey: !!user.openaiApiKey,
-                isAdmin: !!user.isAdmin,
+                isFreeUser: true,
+                remainingMessages: Math.max(0, CONFIG.FREE_TIER_DAILY_LIMIT - messageCount),
+                hasKey: false,
+                isAdmin: false,
             };
+        } catch {
+            return null;
         }
-
-        // Free user - check daily limit
-        const FREE_DAILY_LIMIT = 5;
-        const lastReset = user.lastMessageReset || 0;
-        
-        // Check if we need to reset (midnight GMT)
-        const todayMidnightGMT = new Date(now);
-        todayMidnightGMT.setUTCHours(0, 0, 0, 0);
-        const lastResetDate = new Date(lastReset);
-        lastResetDate.setUTCHours(0, 0, 0, 0);
-        
-        const needsReset = todayMidnightGMT.getTime() > lastResetDate.getTime();
-        const messageCount = needsReset ? 0 : (user.dailyMessageCount || 0);
-        
-        return {
-            isFreeUser: true,
-            remainingMessages: Math.max(0, FREE_DAILY_LIMIT - messageCount),
-            hasKey: false,
-            isAdmin: false,
-            totalDailyLimit: FREE_DAILY_LIMIT,
-        };
     },
 });
 
 /**
- * Internal mutation to reset daily message count for a user.
+ * Internal query to check if a free user has remaining message quota.
+ * Returns true if the user can send another message.
  */
-export const resetDailyMessageCount = internalMutation({
+export const canFreeUserSendMessage = internalQuery({
     args: {
         userId: v.id("users"),
     },
     handler: async (ctx, args) => {
-        await ctx.db.patch(args.userId, {
-            dailyMessageCount: 0,
-            lastMessageReset: Date.now(),
-        });
+        const user = await ctx.db.get(args.userId);
+        if (!user) {
+            console.error("Critical: User not found in canFreeUserSendMessage", { userId: args.userId });
+            return false;
+        }
+
+        const currentCount = user.dailyMessageCount || 0;
+        return currentCount < CONFIG.FREE_TIER_DAILY_LIMIT;
     },
 });
 
 /**
  * Internal mutation to increment user's daily message count.
  * Returns the new count.
+ * Note: Caller should check canFreeUserSendMessage first to validate quota.
  */
 export const incrementMessageCount = internalMutation({
     args: {
@@ -301,39 +272,14 @@ export const incrementMessageCount = internalMutation({
     handler: async (ctx, args) => {
         const user = await ctx.db.get(args.userId);
         if (!user) {
-            throw new Error("User not found");
+            console.error("Critical: User not found in incrementMessageCount", { userId: args.userId });
+            throw new Error("An error occurred. Please refresh the page.");
         }
 
-        const FREE_DAILY_LIMIT = 5;
-        const now = Date.now();
-        const lastReset = user.lastMessageReset || 0;
-        
-        // Check if we need to reset (midnight GMT)
-        const todayMidnightGMT = new Date(now);
-        todayMidnightGMT.setUTCHours(0, 0, 0, 0);
-        const lastResetDate = new Date(lastReset);
-        lastResetDate.setUTCHours(0, 0, 0, 0);
-        
-        const needsReset = todayMidnightGMT.getTime() > lastResetDate.getTime();
-        
-        let newCount: number;
-        if (needsReset) {
-            newCount = 1;
-            await ctx.db.patch(args.userId, {
-                dailyMessageCount: 1,
-                lastMessageReset: now,
-            });
-        } else {
-            newCount = (user.dailyMessageCount || 0) + 1;
-            await ctx.db.patch(args.userId, {
-                dailyMessageCount: newCount,
-            });
-        }
-
-        // Check if user exceeded limit
-        if (newCount > FREE_DAILY_LIMIT) {
-            throw new Error(`Daily message limit exceeded. Free users get ${FREE_DAILY_LIMIT} messages per day. Please add your own OpenAI API key to continue.`);
-        }
+        const newCount = (user.dailyMessageCount || 0) + 1;
+        await ctx.db.patch(args.userId, {
+            dailyMessageCount: newCount,
+        });
 
         return newCount;
     },
@@ -348,23 +294,20 @@ export const resetAllDailyMessageCounts = internalMutation({
     handler: async (ctx) => {
         const now = Date.now();
         
-        // Get all users who are free users (no API key, not admin)
         const allUsers = await ctx.db.query("users").collect();
-        
         let resetCount = 0;
         for (const user of allUsers) {
-            // Only reset for free users (no API key, not admin)
+            // Only reset for free users
             const isFreeUser = !user.isAdmin && !user.openaiApiKey;
-            if (isFreeUser && (user.dailyMessageCount || 0) > 0) {
+            if (isFreeUser) {
                 await ctx.db.patch(user._id, {
                     dailyMessageCount: 0,
-                    lastMessageReset: now,
                 });
                 resetCount++;
             }
         }
 
-        // Also reset global free usage metrics for the new day
+        // Reset global free usage metrics for the new day
         const globalUsage = await ctx.db
             .query("usage")
             .withIndex("by_key", (q) => q.eq("key", "global"))
@@ -395,28 +338,20 @@ export const resetAllDailyMessageCounts = internalMutation({
 export const exhaustAllFreeDailyMessageCounts = internalMutation({
     args: {},
     handler: async (ctx) => {
-        const now = Date.now();
-        const FREE_DAILY_LIMIT = 5;
-
         const allUsers = await ctx.db.query("users").collect();
-
-        let updatedCount = 0;
         for (const user of allUsers) {
             const isFreeUser = !user.isAdmin && !user.openaiApiKey;
             if (isFreeUser) {
                 await ctx.db.patch(user._id, {
-                    dailyMessageCount: FREE_DAILY_LIMIT,
-                    lastMessageReset: now,
+                    dailyMessageCount: CONFIG.FREE_TIER_DAILY_LIMIT,
                 });
-                updatedCount++;
             }
         }
-        return updatedCount;
     },
 });
 
 /**
- * Mark that we've notified the user about Pro → BYOK fallback this period.
+ * Mark that we've notified the user about Pro to BYOK fallback this period.
  */
 export const markProByokFallbackNotified = internalMutation({
     args: {
@@ -425,65 +360,82 @@ export const markProByokFallbackNotified = internalMutation({
     handler: async (ctx, args) => {
         const user = await ctx.db.get(args.userId);
         if (!user) {
-            return;
+            console.error("Critical: User not found in markProByokFallbackNotified", { userId: args.userId });
+            throw new Error("An error occurred. Please refresh the page.");
         }
-
-        if (!user.proByokFallbackNotifiedThisPeriod) {
-            await ctx.db.patch(args.userId, {
-                proByokFallbackNotifiedThisPeriod: true,
-            });
-        }
+        await ctx.db.patch(args.userId, {
+            proByokFallbackNotifiedThisPeriod: true,
+        });
     },
 });
 
 /**
- * Internal mutation to downgrade any users whose Pro period has ended.
- * This is called from a daily cron job rather than scheduling per-user jobs.
+ * Internal mutation to renew an active Pro subscription.
+ * Charges the user, extends the period, and schedules the next renewal.
  */
-export const downgradeExpiredProUsers = internalMutation({
-    args: {},
-    handler: async (ctx) => {
-        const now = Date.now();
-        const allUsers = await ctx.db.query("users").collect();
-
-        let downgraded = 0;
-        for (const user of allUsers) {
-            const inProPeriod =
-                (user.proSubscriptionStatus === "active" ||
-                    user.proSubscriptionStatus === "canceled") &&
-                typeof user.proCurrentPeriodEnd === "number" &&
-                now <= user.proCurrentPeriodEnd;
-
-            // If user is non-admin, subscription is canceled, and the Pro period has ended,
-            // downgrade them back to the free tier.
-            if (
-                !user.isAdmin &&
-                user.proSubscriptionStatus === "canceled" &&
-                !inProPeriod &&
-                typeof user.proCurrentPeriodEnd === "number"
-            ) {
-                await ctx.db.patch(user._id, {
-                    tier: "free",
-                    proSubscriptionStatus: undefined,
-                    proCurrentPeriodEnd: undefined,
-                    proTokensUsedThisPeriod: undefined,
-                    proMonthlyTokenLimit: undefined,
-                });
-                downgraded++;
-            }
+export const renewProSubscription = internalMutation({
+    args: {
+        userId: v.id("users"),
+        currentEnd: v.number(),
+    },
+    handler: async (ctx, args) => {
+        const user = await ctx.db.get(args.userId);
+        if (!user) {
+            console.error("Critical: User not found in renewProSubscription", { userId: args.userId });
+            return;
         }
-        return downgraded;
+
+        const nextEnd = args.currentEnd + 30 * 24 * 60 * 60 * 1000; // ~30 days
+        
+        // TODO: Integrate real billing here.
+        await ctx.runMutation(internal.users.chargeForProRenewal, {
+            userId: args.userId,
+            amountCents: 2000, // $20 in cents
+        });
+
+        await ctx.db.patch(args.userId, {
+            tier: "pro",
+            proSubscriptionStatus: "active",
+            proCurrentPeriodEnd: nextEnd,
+            proTokensUsedThisPeriod: 0,
+            proByokFallbackNotifiedThisPeriod: false,
+        });
+
+        await ctx.scheduler.runAt(
+            nextEnd,
+            internal.users.handleSubscriptionPeriodEnd,
+            { userId: args.userId },
+        );
+    },
+});
+
+/**
+ * Internal mutation to downgrade a canceled Pro subscription to free tier.
+ */
+export const downgradeProToFree = internalMutation({
+    args: {
+        userId: v.id("users"),
+    },
+    handler: async (ctx, args) => {
+        const user = await ctx.db.get(args.userId);
+        if (!user) {
+            console.error("Critical: User not found in downgradeProToFree", { userId: args.userId });
+            return;
+        }
+
+        await ctx.db.patch(args.userId, {
+            tier: "free",
+            proSubscriptionStatus: undefined,
+            proCurrentPeriodEnd: undefined,
+            proTokensUsedThisPeriod: undefined,
+            proByokFallbackNotifiedThisPeriod: undefined,
+        });
     },
 });
 
 /**
  * Internal mutation scheduled at the end of a Pro period.
- *
- * - If the subscription is still "active" at that time, it renews:
- *   - advances the period end by another 30 days
- *   - resets the period token counter
- *   - schedules the next period-end task
- * - If the subscription was "canceled", it downgrades the user to the free tier.
+ * Routes to renewal or downgrade based on subscription status.
  */
 export const handleSubscriptionPeriodEnd = internalMutation({
     args: {
@@ -492,65 +444,44 @@ export const handleSubscriptionPeriodEnd = internalMutation({
     handler: async (ctx, args) => {
         const user = await ctx.db.get(args.userId);
         if (!user) {
+            console.error("Critical: User not found in handleSubscriptionPeriodEnd", { userId: args.userId });
             return;
         }
 
         const now = Date.now();
         const currentEnd = user.proCurrentPeriodEnd;
 
-        if (!currentEnd || now < currentEnd) {
-            // Period hasn't actually ended yet (or no period) – nothing to do.
+        if (!currentEnd) {
+            // No period end set – nothing to do.
+            return;
+        }
+
+        if (now < currentEnd) {
+            // Period hasn't actually ended yet – reschedule for the correct time.
+            await ctx.scheduler.runAt(
+                currentEnd,
+                internal.users.handleSubscriptionPeriodEnd,
+                { userId: args.userId },
+            );
             return;
         }
 
         if (user.proSubscriptionStatus === "active") {
-            // Auto-renew: extend by another 30 days from the previous end,
-            // reset the per-period token counter, and schedule the next period end.
-            const nextEnd = currentEnd + 30 * 24 * 60 * 60 * 1000;
-
-            // Mock payment step for renewal – this is where a real billing
-            // integration would be called. Currently it is a no-op that
-            // just records that a renewal "payment" was attempted.
-            await ctx.runMutation(internal.users.chargeForProRenewal, {
+            await ctx.runMutation(internal.users.renewProSubscription, {
                 userId: args.userId,
-                amountCents: 2000, // $20 in cents
+                currentEnd,
             });
-
-            await ctx.db.patch(args.userId, {
-                tier: user.isAdmin ? "admin" : "pro",
-                proSubscriptionStatus: "active",
-                proCurrentPeriodEnd: nextEnd,
-                proTokensUsedThisPeriod: 0,
-                proMonthlyTokenLimit: user.proMonthlyTokenLimit ?? 7_000_000,
-                proByokFallbackNotifiedThisPeriod: false,
-            });
-
-            await ctx.scheduler.runAt(
-                nextEnd,
-                internal.users.handleSubscriptionPeriodEnd,
-                { userId: args.userId },
-            );
         } else if (user.proSubscriptionStatus === "canceled") {
-            // End of a canceled period: fully downgrade to free.
-            await ctx.db.patch(args.userId, {
-                tier: "free",
-                proSubscriptionStatus: undefined,
-                proCurrentPeriodEnd: undefined,
-                proTokensUsedThisPeriod: undefined,
-                proMonthlyTokenLimit: undefined,
-                proByokFallbackNotifiedThisPeriod: undefined,
+            await ctx.runMutation(internal.users.downgradeProToFree, {
+                userId: args.userId,
             });
         }
     },
 });
 
 /**
- * Internal no-op "payment" mutation for Pro renewals.
- *
- * This is the integration point where a real billing provider
- * (Stripe, Lemon Squeezy, etc.) would be called. For now it
- * only logs the attempt so we can wire up billing later without
- * changing the subscription flow.
+ * Internal mutation to (mock) charge user for Pro renewal.
+ * TODO: Integrate real billing system.
  */
 export const chargeForProRenewal = internalMutation({
     args: {
@@ -560,14 +491,56 @@ export const chargeForProRenewal = internalMutation({
     handler: async (ctx, args) => {
         const user = await ctx.db.get(args.userId);
         if (!user) {
+            console.error("Critical: User not found in chargeForProRenewal", { userId: args.userId });
             return;
         }
-        // TODO add real billing integration here later.
     },
 });
 
 /**
- * Internal mutation to add token usage to a user aggregate.
+ * Internal mutation to track global free-tier token usage and enforce daily cap.
+ * Called after token usage is recorded for free-tier users.
+ */
+export const trackGlobalFreeUsage = internalMutation({
+    args: {
+        totalTokens: v.number(),
+    },
+    handler: async (ctx, args) => {
+        const now = Date.now();
+
+        const todayUsage = await ctx.db
+            .query("usage")
+            .withIndex("by_key", (q) => q.eq("key", "global"))
+            .first();
+
+        const previousTokens = todayUsage?.freeTokensUsedToday || 0;
+        const newTotal = previousTokens + args.totalTokens;
+        const alreadyCapped = todayUsage?.freeCapReachedToday || false;
+
+        // If we cross the shared cap for the first time today, exhaust all
+        // free users' remaining daily messages.
+        if (!alreadyCapped && newTotal > CONFIG.FREE_TIER_DAILY_TOKEN_CAP) {
+            await ctx.runMutation(internal.users.exhaustAllFreeDailyMessageCounts, {});
+        }
+
+        if (todayUsage) {
+            await ctx.db.patch(todayUsage._id, {
+                freeTokensUsedToday: newTotal,
+                freeCapReachedToday: alreadyCapped || newTotal > CONFIG.FREE_TIER_DAILY_TOKEN_CAP,
+            });
+        } else {
+            await ctx.db.insert("usage", {
+                key: "global",
+                freeTokensUsedToday: newTotal,
+                freeCapReachedToday: newTotal > CONFIG.FREE_TIER_DAILY_TOKEN_CAP,
+                lastFreeUsageReset: now,
+            });
+        }
+    },
+});
+
+/**
+ * Internal mutation to add token usage to a user's aggregate counters.
  * This is called after an AI response is generated.
  */
 export const addTokenUsage = internalMutation({
@@ -578,99 +551,44 @@ export const addTokenUsage = internalMutation({
     handler: async (ctx, args) => {
         const user = await ctx.db.get(args.userId);
         if (!user) {
-            throw new Error("User not found");
+            console.error("Critical: User not found in addTokenUsage", { userId: args.userId });
+            throw new Error("An error occurred. Please refresh the page.");
         }
 
-        const now = Date.now();
-        const updates: Record<string, unknown> = {};
+        const inProPeriod = isInProPeriod(user);
 
-        // Global token aggregate
-        const currentTotal = user.totalTokensUsed || 0;
-        updates.totalTokensUsed = currentTotal + args.totalTokens;
-
-        // Pro-period accounting (if applicable).
-        // Pro remains active until the end of the period even if canceled.
-        const inProPeriod =
-            user.tier === "pro" &&
-            (user.proSubscriptionStatus === "active" ||
-                user.proSubscriptionStatus === "canceled") &&
-            typeof user.proCurrentPeriodEnd === "number" &&
-            now <= user.proCurrentPeriodEnd;
-
-        const monthlyLimit = user.proMonthlyTokenLimit ?? 7_000_000;
+        // Update user token counters
+        const updates: Partial<Doc<"users">> = {
+            totalTokensUsed: (user.totalTokensUsed || 0) + args.totalTokens,
+        };
 
         if (inProPeriod) {
-            const tokensUsed = (user.proTokensUsedThisPeriod || 0) + args.totalTokens;
-            updates.proTokensUsedThisPeriod = tokensUsed;
-            updates.proMonthlyTokenLimit = monthlyLimit;
+            updates.proTokensUsedThisPeriod = (user.proTokensUsedThisPeriod || 0) + args.totalTokens;
         }
 
-        // Persist per-user aggregates
         await ctx.db.patch(args.userId, updates);
 
-        // Track global free-tier usage and enforce a shared daily cap.
-        const isFreeTierUser =
-            !user.isAdmin &&
-            !user.openaiApiKey &&
-            !inProPeriod;
-
+        // Track global free-tier usage if applicable
+        const isFreeTierUser = !user.isAdmin && !user.openaiApiKey && !inProPeriod;
+        
         if (isFreeTierUser) {
-            const todayUsage = await ctx.db
-                .query("usage")
-                .withIndex("by_key", (q) => q.eq("key", "global"))
-                .first();
-
-            const previousTokens = todayUsage?.freeTokensUsedToday || 0;
-            const newTotal = previousTokens + args.totalTokens;
-            const alreadyCapped = todayUsage?.freeCapReachedToday || false;
-            const CAP = 1_000_000;
-
-            // If we cross the shared cap for the first time today, exhaust all
-            // free users' remaining daily messages.
-            if (!alreadyCapped && newTotal > CAP) {
-                await ctx.runMutation(internal.users.exhaustAllFreeDailyMessageCounts, {});
-            }
-
-            if (todayUsage) {
-                await ctx.db.patch(todayUsage._id, {
-                    freeTokensUsedToday: newTotal,
-                    freeCapReachedToday: alreadyCapped || newTotal > CAP,
-                });
-            } else {
-                await ctx.db.insert("usage", {
-                    key: "global",
-                    freeTokensUsedToday: newTotal,
-                    freeCapReachedToday: newTotal > CAP,
-                    lastFreeUsageReset: now,
-                });
-            }
+            await ctx.runMutation(internal.users.trackGlobalFreeUsage, {
+                totalTokens: args.totalTokens,
+            });
         }
     },
 });
 
 /**
  * Start a (mock) Pro subscription for the current user.
- * No real payment is processed; this simply marks the user as Pro.
+ * TODO: Integrate real billing system.
  */
 export const startProSubscription = mutation({
     args: {},
     handler: async (ctx) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) {
-            throw new Error("Not authenticated");
-        }
-
-        const user = await ctx.db
-            .query("users")
-            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-            .first();
-
-        if (!user) {
-            throw new Error("User not found");
-        }
+        const user = await getUserFromContext(ctx);
 
         const now = Date.now();
-        const monthlyLimit = user.proMonthlyTokenLimit ?? 7_000_000;
 
         const inExistingCanceledPeriod =
             user.proSubscriptionStatus === "canceled" &&
@@ -683,7 +601,7 @@ export const startProSubscription = mutation({
         // scheduled renewal/cancellation task will handle the period end.
         if (inExistingCanceledPeriod) {
             await ctx.db.patch(user._id, {
-                tier: user.isAdmin ? "admin" : "pro",
+                tier: "pro",
                 proSubscriptionStatus: "active",
                 proByokFallbackNotifiedThisPeriod: false,
             });
@@ -691,31 +609,21 @@ export const startProSubscription = mutation({
             return {
                 status: "resumed" as const,
                 currentPeriodEnd: user.proCurrentPeriodEnd!,
-                monthlyLimit,
             };
         }
 
-        // Otherwise start a brand new Pro period and schedule its end.
+        // Otherwise start a brand new Pro period
         const periodEnd = now + 30 * 24 * 60 * 60 * 1000; // ~30 days
 
-        await ctx.db.patch(user._id, {
-            tier: user.isAdmin ? "admin" : "pro",
-            proSubscriptionStatus: "active",
-            proCurrentPeriodEnd: periodEnd,
-            proTokensUsedThisPeriod: 0,
-            proMonthlyTokenLimit: monthlyLimit,
+        // Use the same renewal logic for initial subscription
+        await ctx.scheduler.runAfter(0, internal.users.renewProSubscription, {
+            userId: user._id,
+            currentEnd: now, // Start from now for initial subscription
         });
-
-        await ctx.scheduler.runAt(
-            periodEnd,
-            internal.users.handleSubscriptionPeriodEnd,
-            { userId: user._id },
-        );
 
         return {
             status: "success" as const,
             currentPeriodEnd: periodEnd,
-            monthlyLimit,
         };
     },
 });
@@ -727,19 +635,7 @@ export const startProSubscription = mutation({
 export const cancelProSubscription = mutation({
     args: {},
     handler: async (ctx) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) {
-            throw new Error("Not authenticated");
-        }
-
-        const user = await ctx.db
-            .query("users")
-            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-            .first();
-
-        if (!user) {
-            throw new Error("User not found");
-        }
+        const user = await getUserFromContext(ctx);
 
         const currentPeriodEnd = user.proCurrentPeriodEnd ?? Date.now();
 
@@ -760,30 +656,14 @@ export const cancelProSubscription = mutation({
 export const getBillingStatus = query({
     args: {},
     handler: async (ctx) => {
-        const identity = await ctx.auth.getUserIdentity();
-        if (!identity) {
-            return null;
-        }
+        try {
+            const user = await getUserFromContext(ctx);
 
-        const user = await ctx.db
-            .query("users")
-            .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-            .first();
-
-        if (!user) {
-            return null;
-        }
-
-        const now = Date.now();
-        const inProPeriod =
-            (user.proSubscriptionStatus === "active" ||
-                user.proSubscriptionStatus === "canceled") &&
-            typeof user.proCurrentPeriodEnd === "number" &&
-            now <= user.proCurrentPeriodEnd;
-
-        const baseTier = user.isAdmin ? "admin" : user.tier || "free";
-        const tier =
-            baseTier === "admin"
+            const inProPeriod = isInProPeriod(user);
+            const tokensUsed = user.proTokensUsedThisPeriod || 0;
+            
+            // Determine effective tier based on current state
+            const tier = user.isAdmin
                 ? "admin"
                 : inProPeriod
                 ? "pro"
@@ -791,23 +671,21 @@ export const getBillingStatus = query({
                 ? "byok"
                 : "free";
 
-        const monthlyLimit = user.proMonthlyTokenLimit ?? 7_000_000;
-        const used = user.proTokensUsedThisPeriod || 0;
-
-        return {
-            tier,
-            isAdmin: !!user.isAdmin,
-            pro: {
-                status: user.proSubscriptionStatus ?? null,
-                isActive: inProPeriod,
-                currentPeriodEnd: user.proCurrentPeriodEnd ?? null,
-                tokensUsedThisPeriod: used,
-                monthlyLimit,
-                remainingTokens: Math.max(0, monthlyLimit - used),
-                byokFallbackNotifiedThisPeriod:
-                    user.proByokFallbackNotifiedThisPeriod ?? false,
-            },
-        };
+            return {
+                tier,
+                isAdmin: !!user.isAdmin,
+                pro: {
+                    status: user.proSubscriptionStatus ?? null,
+                    isActive: inProPeriod,
+                    currentPeriodEnd: user.proCurrentPeriodEnd ?? null,
+                    tokensUsedThisPeriod: tokensUsed,
+                    remainingTokens: Math.max(0, CONFIG.DEFAULT_PRO_MONTHLY_TOKEN_LIMIT - tokensUsed),
+                    byokFallbackNotifiedThisPeriod: user.proByokFallbackNotifiedThisPeriod ?? false,
+                },
+            };
+        } catch {
+            return null;
+        }
     },
 });
 
