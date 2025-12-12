@@ -254,6 +254,21 @@ export const sendMessage = mutation({
             throw new Error(`Message too long (max ${CONFIG.MAX_MESSAGE_LENGTH} characters)`);
         }
 
+        // Rate limiting: Prevent message spam
+        const rateLimitWindowAgo = Date.now() - CONFIG.RATE_LIMIT_WINDOW_MS;
+        const recentMessages = await ctx.db
+            .query("messages")
+            .withIndex("by_chat", (q) => q.eq("chatId", args.chatId))
+            .filter((q) => q.and(
+                q.gt(q.field("_creationTime"), rateLimitWindowAgo),
+                q.eq(q.field("sender"), "user")
+            ))
+            .collect();
+
+        if (recentMessages.length >= CONFIG.MAX_MESSAGES_PER_MINUTE) {
+            throw new Error("Too many messages. Please wait a moment before sending another.");
+        }
+
         if (!chat.repoId || chat.repoId === "pending") {
             throw new Error("Repository is still being created. Please wait a moment and try again.");
         }

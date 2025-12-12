@@ -7,6 +7,9 @@ export const CONFIG = {
   
   // Rate limiting
   MAX_CHATS_PER_MINUTE: 3,
+  MAX_MESSAGES_PER_MINUTE: 10,
+  MAX_API_KEY_UPDATES_PER_WINDOW: 3,
+  API_KEY_UPDATE_WINDOW_MS: 300000, // 5 minutes
   RATE_LIMIT_WINDOW_MS: 60000,
   
   // Timeouts

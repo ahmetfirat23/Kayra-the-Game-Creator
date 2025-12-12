@@ -105,6 +105,12 @@ export const updateApiKey = action({
         if (!args.apiKey || args.apiKey.length < CONFIG.MIN_API_KEY_LENGTH || args.apiKey.length > CONFIG.MAX_API_KEY_LENGTH) {
             throw new Error("Invalid API key format");
         }
+
+        // Rate limiting: Prevent API key validation abuse
+        const canUpdate = await ctx.runQuery(internal.users.canUpdateApiKey, {});
+        if (!canUpdate) {
+            throw new Error("Too many API key update attempts. Please wait 5 minutes before trying again.");
+        }
         
         // Validate the API key by calling OpenAI with a timeout
         try {
@@ -147,7 +153,7 @@ export const updateApiKey = action({
 });
 
 /**
- * Internal mutation to save API key
+ * Internal mutation to save API key and reset rate limit counters
  */
 export const saveApiKey = internalMutation({
     args: {
@@ -155,8 +161,19 @@ export const saveApiKey = internalMutation({
     },
     handler: async (ctx, args) => {
         const user = await getUserFromContext(ctx);
+        const now = Date.now();
+        const rateLimitWindowAgo = now - CONFIG.API_KEY_UPDATE_WINDOW_MS;
+        
+        // Reset counter if outside the window, otherwise increment
+        let updateAttempts = 1;
+        if (user.lastApiKeyUpdate && user.lastApiKeyUpdate > rateLimitWindowAgo) {
+            updateAttempts = (user.apiKeyUpdateAttempts || 0) + 1;
+        }
+        
         await ctx.db.patch(user._id, {
             openaiApiKey: args.apiKey,
+            lastApiKeyUpdate: now,
+            apiKeyUpdateAttempts: updateAttempts,
         });     
     },
 });
@@ -237,6 +254,30 @@ export const getRemainingMessages = query({
         } catch {
             return null;
         }
+    },
+});
+
+/**
+ * Internal query to check if user can update their API key.
+ * Rate limits to prevent abuse of the validation endpoint.
+ */
+export const canUpdateApiKey = internalQuery({
+    args: {},
+    handler: async (ctx) => {
+        const user = await getUserFromContext(ctx);
+        
+        const rateLimitWindowAgo = Date.now() - CONFIG.API_KEY_UPDATE_WINDOW_MS;
+        
+        // Count recent API key update attempts by checking lastApiKeyUpdate timestamp
+        if (user.lastApiKeyUpdate && user.lastApiKeyUpdate > rateLimitWindowAgo) {
+            // Check how many updates happened in the window
+            const updateAttempts = user.apiKeyUpdateAttempts || 0;
+            if (updateAttempts >= CONFIG.MAX_API_KEY_UPDATES_PER_WINDOW) {
+                return false;
+            }
+        }
+        
+        return true;
     },
 });
 

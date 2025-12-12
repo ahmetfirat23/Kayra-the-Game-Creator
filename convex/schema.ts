@@ -24,6 +24,8 @@ export default defineSchema({
         proCurrentPeriodEnd: v.optional(v.number()), // Timestamp when current Pro period ends
         proTokensUsedThisPeriod: v.optional(v.number()), // Tokens used in current Pro period
         proByokFallbackNotifiedThisPeriod: v.optional(v.boolean()), // Whether we've already notified the user that Pro fell back to BYOK this period
+        lastApiKeyUpdate: v.optional(v.number()), // Timestamp of last API key update attempt
+        apiKeyUpdateAttempts: v.optional(v.number()), // Number of API key updates in current rate limit window
     }).index("by_clerk_id", ["clerkId"]),
     
     chats: defineTable({
