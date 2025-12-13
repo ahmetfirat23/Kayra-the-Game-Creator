@@ -193,7 +193,3 @@ Errors are sent to the agent with file paths and line numbers. The agent must fi
 - Rate limiting on chat creation, messages, and API key updates
 - Repository access scoped per user via Freestyle
 - Agent file access restricted to `/template` directory per repo
-
-## License
-
-This project is private and proprietary.
