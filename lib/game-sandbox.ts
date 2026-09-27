@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sandboxName } from "./sandbox-lifecycle.ts";
+import { BRIDGE_HEALTH } from "./kayra-bridge.mjs";
 
 export const SESSION_TIMEOUT_MS = 10 * 60 * 1000;
 export const VCPUS = 1;
@@ -90,6 +91,17 @@ async function commandOk(sandbox: SandboxVm, shell: string): Promise<boolean> {
   return result.exitCode === 0;
 }
 
+async function commandOutput(sandbox: SandboxVm, shell: string): Promise<string> {
+  const result = await sandbox.runCommand("bash", ["-lc", shell], {
+    timeoutMs: 15_000,
+  });
+  return (await result.stdout()).trim();
+}
+
+function expoStartShell(): string {
+  return "cd /template && CI=1 EXPO_NO_TELEMETRY=1 NODE_OPTIONS=--max-old-space-size=1536 npx expo start --web --port 19006 --host lan";
+}
+
 async function installTemplate(sandbox: SandboxVm): Promise<boolean> {
   const installed = await commandOk(
     sandbox,
@@ -124,13 +136,18 @@ async function installTemplate(sandbox: SandboxVm): Promise<boolean> {
 }
 
 /** Quiet first screen until Kayra overwrites `/template/app/(tabs)/index.tsx`. */
-const HOLDING_PAGE = `import { StyleSheet, Text, View } from 'react-native';
+const HOLDING_PAGE = `import { StyleSheet, Text, useColorScheme, View } from 'react-native';
 
 export default function BuildingScreen() {
+  const dark = useColorScheme() === 'dark';
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, dark && styles.containerDark]}>
+      <View style={[styles.blob, styles.blobLavender]} />
+      <View style={[styles.blob, styles.blobBlue]} />
+      <View style={[styles.blob, styles.blobGreen]} />
       <Text style={styles.tree}>🌳</Text>
-      <Text style={styles.message}>
+      <Text style={[styles.word, dark && styles.wordDark]}>Kayra</Text>
+      <Text style={[styles.message, dark && styles.messageDark]}>
         Kayra is building your game. When it's done, it will show here.
       </Text>
     </View>
@@ -143,18 +160,62 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
-    backgroundColor: '#f7f7f5',
+    backgroundColor: '#F0E6FA',
+    overflow: 'hidden',
+  },
+  containerDark: {
+    backgroundColor: '#1A202C',
+  },
+  blob: {
+    position: 'absolute',
+    borderRadius: 9999,
+  },
+  blobLavender: {
+    width: 220,
+    height: 220,
+    backgroundColor: '#D4B8E8',
+    opacity: 0.45,
+    top: -40,
+    left: -30,
+  },
+  blobBlue: {
+    width: 260,
+    height: 260,
+    backgroundColor: '#A8D4E6',
+    opacity: 0.4,
+    bottom: -50,
+    right: -40,
+  },
+  blobGreen: {
+    width: 160,
+    height: 160,
+    backgroundColor: '#B8E8C8',
+    opacity: 0.35,
+    top: 180,
+    left: 40,
   },
   tree: {
-    fontSize: 48,
-    marginBottom: 16,
+    fontSize: 56,
+    marginBottom: 8,
+  },
+  word: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#7EB8D8',
+    marginBottom: 8,
+  },
+  wordDark: {
+    color: '#A8D4E6',
   },
   message: {
     fontSize: 16,
     lineHeight: 24,
     textAlign: 'center',
-    color: '#333',
+    color: '#4A5568',
     maxWidth: 320,
+  },
+  messageDark: {
+    color: '#E2E8F0',
   },
 });
 `;
@@ -201,17 +262,19 @@ async function ensureProcesses(sandbox: SandboxVm, token: string): Promise<void>
     },
   ]);
 
-  const bridgeUp = await commandOk(
+  const health = await commandOutput(
     sandbox,
-    "curl -sf -o /dev/null http://127.0.0.1:3000/__kayra/health",
+    "curl -sf http://127.0.0.1:3000/__kayra/health || true",
   );
-  if (!bridgeUp) {
-    // Detached long-running process: never set timeoutMs (SDK kills on timeout).
+  if (health !== BRIDGE_HEALTH) {
+    await sandbox.runCommand("bash", ["-lc", "pkill -f 'node /opt/kayra-bridge.mjs' || true"], {
+      timeoutMs: 15_000,
+    });
     await sandbox.runCommand({
       cmd: "node",
       args: ["/opt/kayra-bridge.mjs"],
       detached: true,
-      env: { KAYRA_TOKEN: token },
+      env: { KAYRA_TOKEN: token, KAYRA_RESTART_EXPO: "1" },
     });
   }
 
@@ -222,10 +285,7 @@ async function ensureProcesses(sandbox: SandboxVm, token: string): Promise<void>
   if (!expoUp) {
     await sandbox.runCommand({
       cmd: "bash",
-      args: [
-        "-lc",
-        "cd /template && CI=1 EXPO_NO_TELEMETRY=1 npx expo start --web --port 19006 --host lan",
-      ],
+      args: ["-lc", expoStartShell()],
       detached: true,
     });
   }

@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { CONFIG } from "../../convex/config";
 import { sandboxActionForPageEvent } from "../../lib/sandbox-page";
 import {
+  nextPreviewEpoch,
   sandboxToStopOnSwitch,
   shouldEnsureSandboxOnReload,
 } from "../../lib/sandbox-lifecycle";
@@ -75,6 +76,13 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   const isStreaming = messages.some((msg) => msg.status === "streaming");
   const isAiTurn = selectedChat?.isAiTurn || false;
   const isCurrentChatProcessing = isAiTurn || isSending;
+  const [previewEpoch, setPreviewEpoch] = useState(0);
+  const wasAiTurn = useRef(false);
+
+  useEffect(() => {
+    setPreviewEpoch((epoch) => nextPreviewEpoch(wasAiTurn.current, isAiTurn, epoch));
+    wasAiTurn.current = isAiTurn;
+  }, [isAiTurn]);
   
   type MessagePart = { type?: string; [key: string]: unknown };
   const hasCommitted = messages.some((msg) => 
@@ -721,7 +729,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
                 }}
                 placeholder={
                   isPreparing
-                    ? "Starting your game environment..."
+                    ? "Starting your game..."
                     : (isCurrentChatProcessing || isSending)
                     ? "Working..." 
                     : "Describe your game..."
@@ -753,25 +761,26 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
         <div className={`w-full md:w-1/2 md:flex-none flex flex-col overflow-hidden ${
           mobileView === "preview" ? "flex flex-1" : "hidden md:flex md:h-full"
         }`}>
-          <div className="flex-1 bg-gradient-to-br from-[#F8F9FA] to-[#E8F4FC] dark:from-[#1A202C] dark:to-[#2D3748] p-4 md:p-6 flex items-center justify-center">
+          <div className="flex-1 bg-gradient-to-br from-[#F0E6FA] via-[#FAFBFC] to-[#E8F4FC] dark:from-[#1A202C] dark:via-[#2D3748] dark:to-[#1A202C] p-4 md:p-6 flex items-center justify-center">
             {preview?.previewUrl ? (
               <div className="w-full h-full rounded-3xl overflow-hidden border-2 border-[#E8F4FC] dark:border-[#4A5568] shadow-[0_8px_32px_rgba(168,212,230,0.2)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
                 <iframe
+                  key={`${preview.previewUrl}-${previewEpoch}`}
                   src={preview.previewUrl}
                   title="Game preview"
-                  className="w-full h-full border-0 bg-white"
+                  className="w-full h-full border-0 bg-[#F0E6FA] dark:bg-[#1A202C]"
                 />
               </div>
             ) : isPreparing ? (
-              <div className="text-[#7EB8D8] dark:text-[#6BA8C8] text-center animate-pulse-soft">
-                <div className="text-5xl mb-4">⚙️</div>
-                <div className="text-base text-[#4A5568] dark:text-[#E2E8F0] font-medium">Starting your game environment...</div>
-                <div className="text-sm text-[#A0AEC0] dark:text-[#718096] mt-2">This may take 30-60 seconds</div>
+              <div className="text-center">
+                <div className="text-5xl mb-3">🌳</div>
+                <div className="text-2xl font-bold bg-gradient-to-r from-[#8B7EC8] via-[#7EB8D8] to-[#7EC8A8] bg-clip-text text-transparent">Kayra</div>
+                <div className="text-sm text-[#718096] dark:text-[#A0AEC0] mt-2">Starting your game...</div>
               </div>
             ) : (
-              <div className="text-[#A0AEC0] dark:text-[#718096] text-center">
-                <div className="text-5xl mb-4">🎮</div>
-                <div className="text-base">
+              <div className="text-center">
+                <div className="text-5xl mb-3">🌳</div>
+                <div className="text-base font-medium text-[#4A5568] dark:text-[#E2E8F0]">
                   {selectedChatId && messages.length > 0
                     ? "This preview is stopped."
                     : selectedChatId

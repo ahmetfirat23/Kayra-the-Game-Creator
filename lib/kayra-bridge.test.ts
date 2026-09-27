@@ -4,8 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import {
+  BRIDGE_HEALTH,
+  commitRestartsPreview,
+  expoRestartScript,
   handleHttpRequest,
   handleTool,
+  layoutTouchPath,
   previewWaitingPage,
   refusedShell,
 } from "./kayra-bridge.mjs";
@@ -122,7 +126,28 @@ describe("kayra-bridge refused commands", () => {
   });
 
   it("shows a page that reloads while Expo is starting", () => {
-    assert.match(previewWaitingPage(), /refresh/);
-    assert.match(previewWaitingPage(), /Starting your game/);
+    const page = previewWaitingPage();
+    assert.match(page, /refresh/);
+    assert.match(page, /Starting your game/);
+    assert.match(page, /#F0E6FA/);
+    assert.match(page, /#E8F4FC/);
+    assert.match(page, /🌳/);
+  });
+
+  it("touches the app layout after a write inside the tabs route", () => {
+    assert.equal(
+      layoutTouchPath("/template/app/(tabs)/index.tsx"),
+      "/template/app/_layout.tsx",
+    );
+    assert.equal(layoutTouchPath("/template/components/Player.tsx"), null);
+  });
+
+  it("restarts Expo after a commit only inside a sandbox", () => {
+    assert.equal(commitRestartsPreview({ KAYRA_RESTART_EXPO: "1" }), true);
+    assert.equal(commitRestartsPreview({}), false);
+    const script = expoRestartScript();
+    assert.match(script, /max-old-space-size=1536/);
+    assert.match(script, /pkill -f 'expo start'/);
+    assert.equal(BRIDGE_HEALTH, "ok 2");
   });
 });

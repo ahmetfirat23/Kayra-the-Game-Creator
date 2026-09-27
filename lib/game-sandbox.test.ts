@@ -157,9 +157,37 @@ describe("ensureGameSandbox", () => {
       index,
       /Kayra is building your game\. When it's done, it will show here\./,
     );
+    assert.match(index, /#F0E6FA/);
+    assert.match(index, /#1A202C/);
+    assert.doesNotMatch(index, /#f7f7f5|#ffffff/i);
     assert.ok(layout, "expected tab layout overwrite so Explore cannot appear");
     assert.doesNotMatch(layout, /title:\s*['"]Explore['"]/);
     assert.doesNotMatch(index, /Tap the Explore tab/);
+  });
+
+  it("replaces an old bridge and starts Expo with enough memory", async () => {
+    const calls: unknown[] = [];
+    const fake = createFakeClient({
+      getOrCreate: async () =>
+        createFakeVm({
+          runCommand: async (command, args) => {
+            calls.push(typeof command === "string" ? (args ?? []).join(" ") : command);
+            const shell = typeof command === "string" ? (args ?? []).join(" ") : "";
+            if (shell.includes("19006")) {
+              return { exitCode: 1, stdout: async () => "", stderr: async () => "" };
+            }
+            const health = shell.includes("__kayra/health") ? "ok" : "";
+            return { exitCode: 0, stdout: async () => health, stderr: async () => "" };
+          },
+        }),
+    });
+
+    await ensureGameSandbox("chat-abc", { client: fake.client });
+
+    const text = JSON.stringify(calls);
+    assert.match(text, /pkill -f 'node \/opt\/kayra-bridge\.mjs'/);
+    assert.match(text, /KAYRA_RESTART_EXPO/);
+    assert.match(text, /max-old-space-size=1536/);
   });
 
   it("keeps the sandbox when the timeout cannot be extended further", async () => {

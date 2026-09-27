@@ -20,6 +20,8 @@ A web application that creates 3D hypercasual games through conversation. Users 
 
 **Dev Environment:** Freestyle Sandboxes provides isolated Git repositories and dev servers for each project
 
+Per-surface code map (tables, client state, chat, agent tools, sandbox preview, tiers): [`docs/README.md`](docs/README.md).
+
 ## Core Features
 
 ### Conversational Game Development

@@ -62,6 +62,16 @@ export function shouldEnsureSandboxOnReload(isAiTurn: boolean): boolean {
   return !isAiTurn;
 }
 
+/** Bump when a reply finishes so the preview iframe loads the files Kayra just wrote. */
+export function nextPreviewEpoch(
+  wasAiTurn: boolean,
+  isAiTurn: boolean,
+  epoch: number,
+): number {
+  if (wasAiTurn && !isAiTurn) return epoch + 1;
+  return epoch;
+}
+
 export type RecreateStaleInput = {
   lastHeartbeatAt: number;
   now: number;

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  nextPreviewEpoch,
   previewForClient,
   sandboxName,
   sandboxToStopOnSwitch,
@@ -165,5 +166,18 @@ describe("previewForClient", () => {
     });
     assert.equal("token" in result, false);
     assert.equal("execUrl" in result, false);
+  });
+});
+
+describe("nextPreviewEpoch", () => {
+  it("reloads the preview when a reply finishes", () => {
+    assert.equal(nextPreviewEpoch(true, false, 0), 1);
+    assert.equal(nextPreviewEpoch(true, false, 3), 4);
+  });
+
+  it("leaves the preview alone while Kayra is still writing", () => {
+    assert.equal(nextPreviewEpoch(false, true, 1), 1);
+    assert.equal(nextPreviewEpoch(true, true, 1), 1);
+    assert.equal(nextPreviewEpoch(false, false, 2), 2);
   });
 });
