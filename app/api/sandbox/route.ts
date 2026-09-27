@@ -28,6 +28,7 @@ type SandboxAction =
   | "delete"
   | "download"
   | "heartbeat"
+  | "release"
   | "compile-error";
 
 type ThreadPage = {
@@ -60,6 +61,7 @@ async function committedGame(
 type SandboxRequestBody = {
   chatId?: string;
   action?: SandboxAction;
+  viewerId?: string;
 };
 
 async function readBody(req: Request): Promise<SandboxRequestBody> {
@@ -154,6 +156,17 @@ export async function POST(req: Request) {
     const action: SandboxAction = body.action ?? "ensure";
     const client = createVercelSandboxClient();
 
+    if (action === "heartbeat" || action === "release") {
+      if (!body.viewerId || body.viewerId.length > 100) {
+        return NextResponse.json({ error: "viewerId is required" }, { status: 400 });
+      }
+    }
+
+    if (action === "release") {
+      await convex.mutation(api.chat.releaseSandboxViewer, { chatId, viewerId: body.viewerId! });
+      return NextResponse.json({ ok: true });
+    }
+
     if (action === "delete") {
       await deleteGameSandbox(chatId, { client });
       await convex.mutation(api.chat.clearSandbox, { chatId });
@@ -189,7 +202,7 @@ export async function POST(req: Request) {
       }
 
       // Touch before slow VM/network checks so other tabs see a live preview.
-      await convex.mutation(api.chat.touchSandbox, { chatId });
+      await convex.mutation(api.chat.touchSandbox, { chatId, viewerId: body.viewerId!, appOrigin: new URL(req.url).origin });
       const sandbox = await client.get({ name: sandboxName(chatId) });
       if (!sandbox) {
         await convex.mutation(api.chat.clearSandbox, { chatId });
@@ -211,6 +224,7 @@ export async function POST(req: Request) {
           previewUrl: ensured.previewUrl,
           execUrl: ensured.execUrl,
           token: ensured.token,
+          appOrigin: new URL(req.url).origin,
         });
         return NextResponse.json({ ok: true, recovered: true });
       }
@@ -268,6 +282,7 @@ export async function POST(req: Request) {
       previewUrl: ensured.previewUrl,
       execUrl: ensured.execUrl,
       token: ensured.token,
+      appOrigin: new URL(req.url).origin,
     });
 
     return NextResponse.json({ previewUrl: ensured.previewUrl });

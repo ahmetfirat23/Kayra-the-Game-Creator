@@ -18,6 +18,7 @@ import type * as config from "../config.js";
 import type * as crons from "../crons.js";
 import type * as crypto from "../crypto.js";
 import type * as sandboxClient from "../sandboxClient.js";
+import type * as sandboxCleanup from "../sandboxCleanup.js";
 import type * as sandboxSession from "../sandboxSession.js";
 import type * as users from "../users.js";
 
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   crypto: typeof crypto;
   sandboxClient: typeof sandboxClient;
+  sandboxCleanup: typeof sandboxCleanup;
   sandboxSession: typeof sandboxSession;
   users: typeof users;
 }>;

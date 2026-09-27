@@ -6,7 +6,7 @@
 
 ### Convex `sandboxes` row
 
-`registerSandbox` writes one row per chat: `previewUrl`, `execUrl`, `token`, `updatedAt`. `getPreview` returns `{ previewUrl, live }`. `getSandboxAccess` returns the full session to the signed-in owner for the Next.js route (not for the iframe).
+`registerSandbox` writes one row per chat: `previewUrl`, `execUrl`, `token`, `updatedAt`, the app origin, and per-tab viewer leases. `getPreview` returns `{ previewUrl, live }`. `getSandboxAccess` returns the full session to the signed-in owner for the Next.js route (not for the iframe).
 
 ### VM disk
 
@@ -22,7 +22,7 @@ Reload calls `ensure`. `ensureGameSandbox` replays the last successful commit fr
 
 ```ts
 // sandboxes table (convex/schema.ts)
-{ chatId, previewUrl, execUrl, token, updatedAt } // index by_chat
+{ chatId, previewUrl, execUrl, token, updatedAt, appOrigin?, viewers? } // index by_chat
 
 // getPreview client payload (previewForClient)
 { previewUrl: string, live: boolean }
@@ -36,22 +36,25 @@ Reload calls `ensure`. `ensureGameSandbox` replays the last successful commit fr
 | --- | --- |
 | `ensure` (default) | Reuses or creates the named VM with `ensureGameSandbox`, then `registerSandbox`; returns `{ previewUrl }`. Template install cap 200s |
 | `heartbeat` | `touchSandbox` before VM/network checks; extend timeout 60s. If VM gone (`410` / `SANDBOX_STOPPED`), `clearSandbox` so the iframe is not left on a dead address |
+| `release` | Remove this tab's viewer lease. If it was the last viewer, schedule cleanup after 10s |
 | `delete` | Delete VM + `clearSandbox` immediately |
 | `download` | Base64 tar of `/template` (excludes `node_modules`, `.git`, `.expo`, `.cache`); does not create a sandbox |
 
 ### Client lifecycle (`ChatInterface` + helpers)
 
-- Heartbeat every **20 seconds** while a chat is selected (`postSandbox(..., "heartbeat")`).
+- Each selected chat tab has a unique viewer ID. It heartbeats every **20 seconds** and releases its lease on chat switch or pagehide. A bfcache restore joins with a new ID.
+- A lease expires after **60 seconds** without a heartbeat. Convex schedules cleanup checks; the last explicit release stops the VM after about **10 seconds**, while an abandoned tab stops it about **65 seconds** after its last heartbeat. A running AI turn postpones cleanup.
+- The scheduled Convex action calls the app's `/api/sandbox/cleanup` endpoint, which validates the private session token and idle state before using Vercel Sandbox credentials to stop the VM.
 - Stale heartbeat threshold: **60 seconds** for the client preview status. `ensure` reuses a running VM even if the last heartbeat is old.
 - Switching chats stops that tab's heartbeat for the previous chat, but does not delete its VM. Another tab may still be using it. Opening a chat does **not** call `ensure`.
 - Reload calls `ensure` only when `shouldEnsureSandboxOnReload(isAiTurn)` is true (`isAiTurn` false).
-- Closing or reloading a tab does not delete its VM because another tab may still be using it. The VM expires after heartbeats stop; deleting a game project still deletes its VM immediately.
+- Closing or reloading a tab releases only that tab's lease. Other tabs keep the VM running; deleting a game project still deletes its VM immediately.
 - Sending a message calls `ensure` before `sendMessage`.
 - `extendSandboxTimeout`: errors matching platform “maximum execution timeout” are swallowed; other errors are not.
 
 ## Deletes and leftovers
 
-`clearSandbox` removes Convex rows only. `deleteChat` also clears sandbox rows and may Freestyle-delete a legacy UUID `repoId`. A chat with no remaining tabs ends when the VM timeout expires; the next `ensure` reuses it if still running or creates a replacement if it has stopped.
+`clearSandbox` removes Convex rows only. `deleteChat` also clears sandbox rows and may Freestyle-delete a legacy UUID `repoId`. A chat with no remaining tabs is cleaned up by its scheduled lease check. The VM timeout remains a fallback if cleanup fails.
 
 ## Drift
 

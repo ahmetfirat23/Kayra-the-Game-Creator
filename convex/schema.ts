@@ -50,6 +50,8 @@ export default defineSchema({
         execUrl: v.string(),
         token: v.string(),
         updatedAt: v.number(),
+        appOrigin: v.optional(v.string()),
+        viewers: v.optional(v.array(v.object({ id: v.string(), lastSeen: v.number() }))),
     }).index("by_chat", ["chatId"]),
     
     usage: defineTable({

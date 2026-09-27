@@ -120,11 +120,11 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   const lastMessageId = messages[messages.length - 1]?.id;
 
   const postSandbox = useCallback(
-    async (chatId: Id<"chats">, action: "ensure" | "delete" | "download" | "heartbeat" | "compile-error") => {
+    async (chatId: Id<"chats">, action: "ensure" | "delete" | "download" | "heartbeat" | "compile-error", viewerId?: string) => {
       const response = await fetch("/api/sandbox", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, action }),
+        body: JSON.stringify({ chatId, action, viewerId }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -229,16 +229,43 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
 
   useEffect(() => {
     if (!selectedChatId) return;
+    let viewerId = crypto.randomUUID();
+    let active = true;
+
+    const release = () => {
+      if (!active) return;
+      active = false;
+      void fetch("/api/sandbox", {
+        method: "POST",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId: selectedChatId, action: "release", viewerId }),
+      }).catch(() => {});
+    };
 
     const beat = () => {
-      void postSandbox(selectedChatId, "heartbeat").catch(() => {
+      if (!active) return;
+      void postSandbox(selectedChatId, "heartbeat", viewerId).catch(() => {
         // Heartbeat failures are non-fatal; the next ensure/heartbeat recovers.
       });
     };
 
     beat();
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      viewerId = crypto.randomUUID();
+      active = true;
+      beat();
+    };
     const interval = window.setInterval(beat, 20_000);
-    return () => window.clearInterval(interval);
+    window.addEventListener("pagehide", release);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("pagehide", release);
+      window.removeEventListener("pageshow", onPageShow);
+      release();
+    };
   }, [selectedChatId, postSandbox]);
 
   useEffect(() => {

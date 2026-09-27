@@ -11,6 +11,7 @@ import { isFreestyleRepoId, missingSandboxSessionMessage, previewForClient } fro
 import { resolveApiKey } from "./ApiKeyResolver";
 import { createTurnBasedContextHandler } from "./ContextHandler";
 import { getUserFromContext, isInProPeriod } from "./users";
+import { activeViewers, CLEANUP_DELAY_MS, removeViewer, touchViewer } from "../lib/sandbox-viewers";
 
 /**
  * Returns all chats for the current user, ordered by creation date descending.
@@ -531,6 +532,7 @@ export const registerSandbox = mutation({
         previewUrl: v.string(),
         execUrl: v.string(),
         token: v.string(),
+        appOrigin: v.string(),
     },
     handler: async (ctx, args) => {
         await authenticateAndVerifyChatOwnership(ctx, args.chatId);
@@ -539,6 +541,7 @@ export const registerSandbox = mutation({
             .query("sandboxes")
             .withIndex("by_chat", (q) => q.eq("chatId", args.chatId))
             .collect();
+        const viewers = existing.flatMap((row) => activeViewers(row.viewers ?? [], Date.now()));
         for (const row of existing) {
             await ctx.db.delete(row._id);
         }
@@ -549,7 +552,10 @@ export const registerSandbox = mutation({
             execUrl: args.execUrl,
             token: args.token,
             updatedAt: Date.now(),
+            appOrigin: args.appOrigin,
+            viewers,
         });
+        await ctx.scheduler.runAfter(CLEANUP_DELAY_MS, internal.sandboxCleanup.cleanupIdleSandbox, { chatId: args.chatId });
     },
 });
 
@@ -626,6 +632,8 @@ export const clearSandbox = mutation({
 export const touchSandbox = mutation({
     args: {
         chatId: v.id("chats"),
+        viewerId: v.string(),
+        appOrigin: v.string(),
     },
     handler: async (ctx, args) => {
         await authenticateAndVerifyChatOwnership(ctx, args.chatId);
@@ -637,7 +645,64 @@ export const touchSandbox = mutation({
         if (!row) {
             return;
         }
-        await ctx.db.patch(row._id, { updatedAt: Date.now() });
+        const now = Date.now();
+        await ctx.db.patch(row._id, {
+            updatedAt: now,
+            appOrigin: args.appOrigin,
+            viewers: touchViewer(row.viewers ?? [], args.viewerId, now),
+        });
+        await ctx.scheduler.runAfter(CLEANUP_DELAY_MS, internal.sandboxCleanup.cleanupIdleSandbox, { chatId: args.chatId });
+    },
+});
+
+export const releaseSandboxViewer = mutation({
+    args: { chatId: v.id("chats"), viewerId: v.string() },
+    handler: async (ctx, args) => {
+        await authenticateAndVerifyChatOwnership(ctx, args.chatId);
+        const row = await ctx.db.query("sandboxes").withIndex("by_chat", (q) => q.eq("chatId", args.chatId)).first();
+        if (!row) return;
+        const viewers = removeViewer(row.viewers ?? [], args.viewerId, Date.now());
+        await ctx.db.patch(row._id, { viewers });
+        if (viewers.length === 0) {
+            await ctx.scheduler.runAfter(10_000, internal.sandboxCleanup.cleanupIdleSandbox, { chatId: args.chatId });
+        }
+    },
+});
+
+export const getSandboxCleanupState = internalQuery({
+    args: { chatId: v.id("chats") },
+    handler: async (ctx, args) => {
+        const row = await ctx.db.query("sandboxes").withIndex("by_chat", (q) => q.eq("chatId", args.chatId)).first();
+        const chat = await ctx.db.get(args.chatId);
+        if (!row) return null;
+        return { activeViewers: activeViewers(row.viewers ?? [], Date.now()).length, aiTurn: Boolean(chat?.isAiTurn), token: row.token, appOrigin: row.appOrigin };
+    },
+});
+
+export const cleanupAccess = query({
+    args: { chatId: v.id("chats"), token: v.string() },
+    handler: async (ctx, args) => {
+        const row = await ctx.db.query("sandboxes").withIndex("by_chat", (q) => q.eq("chatId", args.chatId)).first();
+        const chat = await ctx.db.get(args.chatId);
+        return Boolean(row && row.token === args.token && !chat?.isAiTurn && activeViewers(row.viewers ?? [], Date.now()).length === 0);
+    },
+});
+
+export const clearSandboxWithTokenIfIdle = mutation({
+    args: { chatId: v.id("chats"), token: v.string() },
+    handler: async (ctx, args) => {
+        const row = await ctx.db.query("sandboxes").withIndex("by_chat", (q) => q.eq("chatId", args.chatId)).first();
+        const chat = await ctx.db.get(args.chatId);
+        if (row && row.token === args.token && !chat?.isAiTurn && activeViewers(row.viewers ?? [], Date.now()).length === 0) {
+            await ctx.db.delete(row._id);
+        }
+    },
+});
+
+export const scheduleSandboxCleanup = internalMutation({
+    args: { chatId: v.id("chats"), delayMs: v.number() },
+    handler: async (ctx, args) => {
+        await ctx.scheduler.runAfter(args.delayMs, internal.sandboxCleanup.cleanupIdleSandbox, { chatId: args.chatId });
     },
 });
 
