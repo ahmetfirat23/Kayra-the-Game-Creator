@@ -19,6 +19,7 @@ import {
   sandboxName,
   shouldRecoverPreview,
 } from "../../../lib/sandbox-lifecycle";
+import { missingViewerRelease, rejectsNewSandboxField } from "../../../lib/sandbox-compat";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -141,6 +142,36 @@ async function previewProcessHealthy(access: {
   }
 }
 
+async function registerSandboxCompat(
+  convex: ConvexHttpClient,
+  args: { chatId: Id<"chats">; previewUrl: string; execUrl: string; token: string; appOrigin: string },
+) {
+  try {
+    await convex.mutation(api.chat.registerSandbox, args);
+  } catch (error) {
+    if (!rejectsNewSandboxField(error, ["appOrigin"])) throw error;
+    const legacyArgs = {
+      chatId: args.chatId,
+      previewUrl: args.previewUrl,
+      execUrl: args.execUrl,
+      token: args.token,
+    };
+    await convex.mutation(api.chat.registerSandbox, legacyArgs as typeof args);
+  }
+}
+
+async function touchSandboxCompat(
+  convex: ConvexHttpClient,
+  args: { chatId: Id<"chats">; viewerId: string; appOrigin: string },
+) {
+  try {
+    await convex.mutation(api.chat.touchSandbox, args);
+  } catch (error) {
+    if (!rejectsNewSandboxField(error, ["viewerId", "appOrigin"])) throw error;
+    await convex.mutation(api.chat.touchSandbox, { chatId: args.chatId } as typeof args);
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const authResult = await authenticatedConvexClient();
@@ -163,7 +194,11 @@ export async function POST(req: Request) {
     }
 
     if (action === "release") {
-      await convex.mutation(api.chat.releaseSandboxViewer, { chatId, viewerId: body.viewerId! });
+      try {
+        await convex.mutation(api.chat.releaseSandboxViewer, { chatId, viewerId: body.viewerId! });
+      } catch (error) {
+        if (!missingViewerRelease(error)) throw error;
+      }
       return NextResponse.json({ ok: true });
     }
 
@@ -202,7 +237,7 @@ export async function POST(req: Request) {
       }
 
       // Touch before slow VM/network checks so other tabs see a live preview.
-      await convex.mutation(api.chat.touchSandbox, { chatId, viewerId: body.viewerId!, appOrigin: new URL(req.url).origin });
+      await touchSandboxCompat(convex, { chatId, viewerId: body.viewerId!, appOrigin: new URL(req.url).origin });
       const sandbox = await client.get({ name: sandboxName(chatId) });
       if (!sandbox) {
         await convex.mutation(api.chat.clearSandbox, { chatId });
@@ -219,7 +254,7 @@ export async function POST(req: Request) {
           existingToken: access.token,
           game,
         });
-        await convex.mutation(api.chat.registerSandbox, {
+        await registerSandboxCompat(convex, {
           chatId,
           previewUrl: ensured.previewUrl,
           execUrl: ensured.execUrl,
@@ -277,7 +312,7 @@ export async function POST(req: Request) {
       game,
     });
 
-    await convex.mutation(api.chat.registerSandbox, {
+    await registerSandboxCompat(convex, {
       chatId,
       previewUrl: ensured.previewUrl,
       execUrl: ensured.execUrl,
