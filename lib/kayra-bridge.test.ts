@@ -12,6 +12,7 @@ import {
   handleTool,
   layoutTouchPath,
   expoRestartOrder,
+  expoProxyHeaders,
   fileExcerpt,
   searchCode,
   compileErrorText,
@@ -21,6 +22,7 @@ import {
   noteCompileError,
   previewResponseHeaders,
   previewErrorText,
+  isExpoCorsError,
   previewWaitingPage,
   RESTART_SCRIPT_PATH,
   refusedShell,
@@ -204,7 +206,7 @@ describe("kayra-bridge refused commands", () => {
     assert.doesNotMatch(RESTART_SCRIPT_PATH, /expo/i);
     assert.match(script, /kayra-restart-preview\.log/);
     assert.match(script, /flock -n \/tmp\/kayra-expo\.lock/);
-    assert.equal(BRIDGE_HEALTH, "ok 17");
+    assert.equal(BRIDGE_HEALTH, "ok 18");
     assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
     assert.deepEqual(expoRestartOrder({}), []);
   });
@@ -246,5 +248,21 @@ describe("kayra-bridge refused commands", () => {
     assert.equal(decodePreviewErrorBody(Buffer.from([0xff, 0x00, 0xfe]), "identity"), "");
     assert.equal(decodePreviewErrorBody(Buffer.from("bad gzip"), "gzip"), "");
     assert.equal(previewErrorText(500, "", false, true), "Preview document failed with HTTP 500.");
+  });
+
+  it("keeps the browser origin out of Expo and recognizes its CORS failure", () => {
+    const headers = expoProxyHeaders({
+      host: "sb-example.vercel.run",
+      origin: "https://sb-example.vercel.run",
+      "x-forwarded-host": "sb-example.vercel.run",
+      "x-forwarded-proto": "https",
+      accept: "text/html",
+    });
+    assert.equal(headers.host, "127.0.0.1:19006");
+    assert.equal(headers.origin, undefined);
+    assert.equal(headers["x-forwarded-host"], undefined);
+    assert.equal(headers.accept, "text/html");
+    assert.equal(isExpoCorsError("Unauthorized request from https://sb-example.vercel.run. This may happen because of a conflicting browser extension to intercept HTTP requests."), true);
+    assert.equal(isExpoCorsError("Unable to resolve module ./music.wav"), false);
   });
 });

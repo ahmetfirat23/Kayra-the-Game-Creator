@@ -7,7 +7,7 @@ import { Id } from "../../convex/_generated/dataModel";
 import { UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { CONFIG } from "../../convex/config";
-import { compileFixPrompt, isHiddenCompileFix } from "../../lib/compile-error";
+import { compileFixPrompt, isHiddenCompileFix, isPreviewInfrastructureError } from "../../lib/compile-error";
 import { successfulCommitCountFromUiMessages } from "../../lib/finished-game";
 import {
   previewFrameSrc,
@@ -626,7 +626,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
       try {
         const payload = await postSandbox(selectedChatId, "compile-error");
         const error = typeof payload.error === "string" ? payload.error.trim() : "";
-        if (!error || stopped || reportedCompileErrors.current.has(error)) return;
+        if (!error || stopped || isPreviewInfrastructureError(error) || reportedCompileErrors.current.has(error)) return;
         await sendMessage({
           chatId: selectedChatId,
           text: compileFixPrompt(error),
