@@ -240,37 +240,62 @@ const styles = StyleSheet.create({
 });
 `;
 
-/** Single-screen layout so the Expo starter Explore tab cannot appear. */
-const HOLDING_TABS_LAYOUT = `import { Tabs } from 'expo-router';
+/** Keep the upstream route group for saved games, without its starter tabs. */
+const GAME_LAYOUT = `import { Slot } from 'expo-router';
 
-export default function TabLayout() {
-  return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: { display: 'none' },
-      }}
-    >
-      <Tabs.Screen name="index" options={{ title: 'Home' }} />
-      <Tabs.Screen name="explore" options={{ href: null }} />
-    </Tabs>
-  );
+export default function GameLayout() {
+  return <Slot />;
 }
 `;
 
-async function writeHoldingPage(sandbox: SandboxVm): Promise<void> {
-  await sandbox.writeFiles([
-    {
-      path: "/template/app/(tabs)/index.tsx",
-      content: HOLDING_PAGE,
-      mode: 0o644,
-    },
-    {
-      path: "/template/app/(tabs)/_layout.tsx",
-      content: HOLDING_TABS_LAYOUT,
-      mode: 0o644,
-    },
-  ]);
+/** Optional example; it is outside app/ so it never appears as a preview route. */
+const TAP_GAME_EXAMPLE = `import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+export default function TapGame() {
+  const [score, setScore] = useState(0);
+  return (
+    <View style={styles.screen}>
+      <Text style={styles.title}>Tap Garden</Text>
+      <Text style={styles.score}>Score: {score}</Text>
+      <Pressable accessibilityRole="button" onPress={() => setScore((value) => value + 1)} style={styles.button}>
+        <Text style={styles.buttonText}>Grow 🌱</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20, backgroundColor: '#F0E6FA' },
+  title: { fontSize: 32, fontWeight: '700', color: '#273249' },
+  score: { fontSize: 22, color: '#273249' },
+  button: { paddingVertical: 16, paddingHorizontal: 28, borderRadius: 16, backgroundColor: '#5A4292' },
+  buttonText: { fontSize: 20, fontWeight: '700', color: '#FFFFFF' },
+});
+`;
+
+function gameIncludesPath(game: FinishedGame | null | undefined, filePath: string): boolean {
+  return Boolean(game?.files.some((file) => file.path === filePath) ||
+    game?.diskEdits.some((edit) => edit.path === filePath));
+}
+
+async function prepareStarterFiles(
+  sandbox: SandboxVm,
+  game: FinishedGame | null | undefined,
+): Promise<void> {
+  const files: Array<{ path: string; content: string; mode: number }> = [];
+  if (!includesGameScreen(game)) {
+    files.push({ path: "/template/app/(tabs)/index.tsx", content: HOLDING_PAGE, mode: 0o644 });
+  }
+  if (!gameIncludesPath(game, "/template/app/(tabs)/_layout.tsx")) {
+    files.push({ path: "/template/app/(tabs)/_layout.tsx", content: GAME_LAYOUT, mode: 0o644 });
+  }
+  files.push({ path: "/template/examples/tap-game.tsx", content: TAP_GAME_EXAMPLE, mode: 0o644 });
+  await sandbox.runCommand("bash", ["-lc", "mkdir -p /template/examples"], { timeoutMs: 15_000 });
+  await sandbox.writeFiles(files);
+  if (!gameIncludesPath(game, "/template/app/(tabs)/explore.tsx")) {
+    await sandbox.runCommand("bash", ["-lc", "rm -f '/template/app/(tabs)/explore.tsx'"], { timeoutMs: 15_000 });
+  }
 }
 
 async function stopExpo(sandbox: SandboxVm): Promise<void> {
@@ -442,13 +467,12 @@ export async function ensureGameSandbox(
     await stopExpo(sandbox);
   }
 
+  if (installedNow || shouldRestore) {
+    await prepareStarterFiles(sandbox, shouldRestore ? game : null);
+  }
+
   if (shouldRestore && game) {
-    if (!includesGameScreen(game)) {
-      await writeHoldingPage(sandbox);
-    }
     await restoreFinishedGame(sandbox, game);
-  } else if (installedNow) {
-    await writeHoldingPage(sandbox);
   }
 
   const newToken = !existingToken;

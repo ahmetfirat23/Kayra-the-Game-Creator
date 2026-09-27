@@ -170,6 +170,9 @@ Then write code immediately.
 - **Game Entry**  
   \`/template/app/(tabs)/index.tsx\`
 
+- **Starter**
+  The route group already has a single-screen layout with no Home or Explore tabs. Build the game in the entry screen; add navigation only if the user asks for it. For a small React Native interaction example, inspect \`/template/examples/tap-game.tsx\` only when useful.
+
 - **Components**  
   \`/template/components/\`
 

@@ -171,11 +171,13 @@ describe("ensureGameSandbox", () => {
 
   it("writes a holding page over the Expo starter before Expo serves", async () => {
     const written: Array<{ path: string; content: string }> = [];
+    const shells: string[] = [];
     const fake = createFakeClient({
       getOrCreate: async () =>
         createFakeVm({
           runCommand: async (command, args) => {
             const shell = Array.isArray(args) ? args.join(" ") : "";
+            shells.push(shell);
             const missingLibs =
               typeof command === "string" && shell.includes("node_modules/three");
             return {
@@ -211,8 +213,10 @@ describe("ensureGameSandbox", () => {
     assert.match(index, /#F0E6FA/);
     assert.match(index, /#1A202C/);
     assert.doesNotMatch(index, /#f7f7f5|#ffffff/i);
-    assert.ok(layout, "expected tab layout overwrite so Explore cannot appear");
-    assert.doesNotMatch(layout, /title:\s*['"]Explore['"]/);
+    assert.match(layout, /import \{ Slot \} from 'expo-router'/);
+    assert.doesNotMatch(layout, /Tabs|Explore|Home/);
+    assert.ok(shells.some((shell) => shell.includes("rm -f '/template/app/(tabs)/explore.tsx'")));
+    assert.match(byPath["/template/examples/tap-game.tsx"], /export default function TapGame/);
     assert.doesNotMatch(index, /Tap the Explore tab/);
   });
 
@@ -259,6 +263,7 @@ describe("ensureGameSandbox", () => {
 
     const index = written.find((file) => file.path === "/template/app/(tabs)/index.tsx");
     assert.equal(index?.content, screen);
+    assert.match(written.find((file) => file.path === "/template/app/(tabs)/_layout.tsx")?.content ?? "", /<Slot \/>/);
     assert.equal(
       written.some((file) => file.content.includes(HOLDING_SENTENCE)),
       false,
@@ -267,6 +272,39 @@ describe("ensureGameSandbox", () => {
     const startedExpo = order.indexOf("expo");
     assert.ok(wroteGame >= 0);
     assert.ok(startedExpo > wroteGame);
+  });
+
+  it("keeps routes and layouts explicitly saved by a game", async () => {
+    const written: Array<{ path: string; content: string }> = [];
+    const shells: string[] = [];
+    const fake = createFakeClient({
+      getOrCreate: async () => createFakeVm({
+        runCommand: async (command, args) => {
+          const shell = typeof command === "string" ? (args ?? []).join(" ") : "";
+          shells.push(shell);
+          return { exitCode: shell.includes("node_modules/three") ? 1 : 0, stdout: async () => "", stderr: async () => "" };
+        },
+        writeFiles: async (files) => {
+          for (const file of files) written.push({ path: file.path, content: String(file.content) });
+        },
+      }),
+    });
+
+    await ensureGameSandbox("chat-abc", {
+      client: fake.client,
+      game: {
+        files: [
+          { path: "/template/app/(tabs)/index.tsx", content: "game screen" },
+          { path: "/template/app/(tabs)/_layout.tsx", content: "custom layout" },
+          { path: "/template/app/(tabs)/explore.tsx", content: "custom route" },
+        ],
+        diskEdits: [],
+      },
+    });
+
+    assert.equal(written.find((file) => file.path.endsWith("/_layout.tsx"))?.content, "custom layout");
+    assert.equal(written.find((file) => file.path.endsWith("/explore.tsx"))?.content, "custom route");
+    assert.equal(shells.some((shell) => shell.includes("rm -f '/template/app/(tabs)/explore.tsx'")), false);
   });
 
   it("replaces a placeholder already on disk and leaves a real game alone", async () => {
