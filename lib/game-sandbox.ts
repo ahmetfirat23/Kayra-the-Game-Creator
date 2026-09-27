@@ -90,12 +90,12 @@ async function commandOk(sandbox: SandboxVm, shell: string): Promise<boolean> {
   return result.exitCode === 0;
 }
 
-async function installTemplate(sandbox: SandboxVm): Promise<void> {
+async function installTemplate(sandbox: SandboxVm): Promise<boolean> {
   const installed = await commandOk(
     sandbox,
     "test -d /template/node_modules/three && test -d /template/node_modules/@react-three/fiber && test -d /template/node_modules/expo-gl",
   );
-  if (installed) return;
+  if (installed) return false;
 
   const prepare = await sandbox.runCommand(
     "bash",
@@ -119,6 +119,7 @@ async function installTemplate(sandbox: SandboxVm): Promise<void> {
       `Could not prepare the game template. ${stderr || stdout}`.slice(0, 700),
     );
   }
+  return true;
 }
 
 async function ensureProcesses(sandbox: SandboxVm, token: string): Promise<void> {
@@ -194,7 +195,15 @@ export async function ensureGameSandbox(
   // platform maximum is reached, and that must not block the preview.
   await extendSandboxTimeout(sandbox, SESSION_TIMEOUT_MS);
 
-  await installTemplate(sandbox);
+  const installedNow = await installTemplate(sandbox);
+  if (installedNow) {
+    // Metro keeps a failed resolve until Expo starts again.
+    await sandbox.runCommand(
+      "bash",
+      ["-lc", "pkill -f 'expo start' || true"],
+      { timeoutMs: 15_000 },
+    );
+  }
 
   const token = existingToken || randomBytes(32).toString("hex");
   await ensureProcesses(sandbox, token);

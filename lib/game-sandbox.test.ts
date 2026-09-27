@@ -95,6 +95,7 @@ describe("ensureGameSandbox", () => {
     const install = shells.join("\n");
     assert.match(install, /npm install three @react-three\/fiber @react-three\/drei @react-three\/rapier zustand @use-gesture\/react/);
     assert.match(install, /npx expo install expo-gl expo-av expo-haptics/);
+    assert.match(install, /pkill -f 'expo start'/);
   });
 
   it("keeps the sandbox when the timeout cannot be extended further", async () => {
