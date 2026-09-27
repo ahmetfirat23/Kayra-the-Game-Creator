@@ -78,7 +78,9 @@ describe("ensureGameSandbox", () => {
             const shell = Array.isArray(args) ? args.join(" ") : "";
             if (typeof command === "string") shells.push(shell);
             if (shell.includes("npm install three")) {
-              assert.ok((opts?.timeoutMs ?? 0) >= 270_000);
+              const timeout = opts?.timeoutMs ?? 0;
+              assert.ok(timeout <= 200_000);
+              assert.ok(timeout >= 120_000);
             }
             const missingLibs = shell.includes("node_modules/three");
             return {

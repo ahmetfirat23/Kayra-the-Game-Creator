@@ -109,7 +109,8 @@ async function installTemplate(sandbox: SandboxVm): Promise<boolean> {
         "cd /template && CI=1 npx expo install expo-gl expo-av expo-haptics",
       ].join(" && "),
     ],
-    { timeoutMs: 270_000 },
+    // The ensure route ends at 300s, and sandbox startup still has to fit after this.
+    { timeoutMs: 200_000 },
   );
 
   if (prepare.exitCode !== 0) {

@@ -97,11 +97,19 @@ describe("kayra-bridge refused commands", () => {
       "npx expo lint",
       "npm run dev",
       "npx expo start --web --port 3000",
+      "npm install",
+      "cd /template && npm ci",
+      "yarn install",
+      "pnpm install",
     ]) {
       const result = await handleTool("exec", { command });
       assert.equal(refusedShell(command) !== null, true);
       assert.match(result.content[0]?.text ?? "", /do not/i);
     }
+  });
+
+  it("allows installing one named package", () => {
+    assert.equal(refusedShell("npm install howler"), null);
   });
 
   it("does not reinstall when npm_install has no safe package names", async () => {
