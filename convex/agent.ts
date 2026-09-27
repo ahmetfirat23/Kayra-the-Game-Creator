@@ -124,9 +124,8 @@ Use gradients, soft grids, or distant fog to create depth.
 2. **Verify Structure**  
    Ensure target directories exist (e.g., \`/template/app/(tabs)/\`) using \`listDirectory\` only once.
 
-3. **Read Sparingly**
-    Read only essential files. Avoid re-reading files you modified.
-    When reading multiple files, always use \`readFiles\` with an array of paths in a single call rather than calling it multiple times.
+3. **Inspect Precisely**
+    Use \`searchCode\` to locate relevant symbols, then \`readFiles\` with line ranges around the matches. Each read returns at most 160 numbered lines. Continue at the reported line only if needed. Avoid re-reading files you modified. Never dump whole files through \`exec\`.
 
 4. **Write & Commit**
     Your main objective is to write code files. Write complete, working files. When writing multiple files, always use \`writeFiles\` with an array of file objects in a single call rather than calling it multiple times. Run \`commitAndPush\` once after the game files are written. Your code should be compact, focusing on core functionality first.
@@ -140,9 +139,10 @@ Use gradients, soft grids, or distant fog to create depth.
 **CRITICAL - STRATEGIC READS**: 
 After user approves GDD:
 
-Read ONLY these (once per session, if you don't have them in conversation history):
-- \`package.json\` - to check dependencies
-- \`/template/app/(tabs)/\` structure - to verify entry point
+Inspect only what the task needs:
+- Use \`listDirectory\` once to find the entry point if unknown.
+- Search for symbols or relevant paths before reading code.
+- Read \`package.json\` only when changing dependencies; read the relevant section.
 
 Do NOT read:
 - Example game files you didn't create
@@ -202,7 +202,8 @@ Then write code immediately.
 ## Tools & Error Recovery
 ### Approved Tools
 - \`listDirectory\` — verify folder structure
-- \`readFiles\` — read one or more file contents (only when necessary). ALWAYS pass an array of paths to read multiple files in a single call, never make separate calls for each file.
+- \`searchCode\` — find symbols and line numbers without loading files.
+- \`readFiles\` — read short numbered line ranges. Pass at most four relevant paths or ranges per call.
 - \`writeFiles\` — create or overwrite files. ALWAYS pass an array of file objects to write multiple files in a single call, never make separate calls for each file.
 - \`editFiles\` — make precise line edits. ALWAYS pass an array of file edit objects to edit multiple files in a single call, never make separate calls for each file.
 - \`commitAndPush\` — save changes
@@ -339,88 +340,33 @@ export function getToolCallTracker(): ToolCallTracker {
 export function createFreestyleTools(mcpClient: any) {
     return {
         listDirectory: {
-            description: "List the whole directory structure of the project recursively",
-            inputSchema: z.object({}),
-            execute: async () => {
+            description: "List up to 100 direct children of one project directory. Use searchFiles to discover deeper paths.",
+            inputSchema: z.object({ path: z.string().optional() }),
+            execute: async ({ path }: { path?: string }) => {
                 try {
-                    // Helper to recursively list directories with full paths
-                    async function listRecursive(dirPath: string): Promise<string[]> {
-                        const result = await mcpClient.callTool({
-                            name: "list_directory",
-                            arguments: { path: dirPath },
-                        });
-                        
-                        let content = "";
-                        if (Array.isArray(result.content) && result.content.length > 0) {
-                            const firstContent = result.content[0];
-                            if (firstContent && 'text' in firstContent) {
-                                content = firstContent.text || "";
-                            }
-                        }
-                        
-                        if (!content) return [];
-                        
-                        const lines = content.split('\n').filter(l => l.trim());
-                        let paths: string[] = [];
-                        
-                        for (const line of lines) {
-                            // Skip total line and empty lines
-                            if (line.startsWith('total ') || !line.trim()) continue;
-                            
-                            // Parse ls -la output format
-                            // Format: drwxr-xr-x   2 root root   4096 Dec  5 10:53 .github
-                            const parts = line.split(/\s+/);
-                            if (parts.length < 9) continue;
-                            
-                            // The filename is the last part (index 8+)
-                            const itemName = parts.slice(8).join(' ');
-                            
-                            // Skip . and .. entries
-                            if (itemName === '.' || itemName === '..') continue;
-                            
-                            // Check if it's a directory (first char is 'd')
-                            const isDirectory = parts[0].startsWith('d');
-                            
-                            const fullPath = `${dirPath}/${itemName}`.replace(/\/+/g, '/');
-                            
-                            if (isDirectory) {
-                                paths.push(fullPath + '/');
-                                // Recursively list subdirectories, but skip common ones to avoid huge output
-                                if (itemName !== 'node_modules' && itemName !== '.git') {
-                                    const subPaths = await listRecursive(fullPath);
-                                    paths.push(...subPaths);
-                                }
-                            } else {
-                                paths.push(fullPath);
-                            }
-                        }
-                        
-                        return paths;
-                    }
-                    
-                    const allPaths = await listRecursive('/template');
-                    // Sort paths for better readability
-                    allPaths.sort();
-                    const output = allPaths.join('\n');
-                    return output || `Listed /template (empty or no files found)`;
+                    const result = await mcpClient.callTool({ name: "list_directory", arguments: { path: path || "/template" } });
+                    const first = result.content?.[0];
+                    return first && "text" in first ? first.text : "(empty)";
                 } catch (error) {
                     console.error("listDirectory error:", error);
-                    return `Error listing directory /template: ${error instanceof Error ? error.message : "Unknown error"}`;
+                    return `Error listing directory ${path || "/template"}: ${error instanceof Error ? error.message : "Unknown error"}`;
                 }
             },
         },
         readFiles: {
-            description: "Read the contents of one or more files from the project. CRITICAL: Always read multiple files in a single call by passing an array of paths. Never call this tool multiple times for individual files - batch them together.",
+            description: "Read at most 160 numbered lines per file. Search for the relevant symbol first, then request line ranges. At most four files per call.",
             inputSchema: z.object({
-                paths: z.array(z.string()).describe("Array of file paths to read (e.g. ['/template/app/index.tsx', '/template/components/Player.tsx']). Always include ALL files you need to read in a single array."),
+                paths: z.array(z.union([z.string(), z.object({ path: z.string(), startLine: z.number().int().positive().optional(), endLine: z.number().int().positive().optional() })])).min(1).max(4).describe("Paths or {path, startLine, endLine} ranges. Omit range to read the first 160 lines."),
             }),
-            execute: async ({ paths }: { paths: string[] }) => {
+            execute: async ({ paths }: { paths: Array<string | { path: string; startLine?: number; endLine?: number }> }) => {
                 try {
                     const tracker = getToolCallTracker();
                     const results: Array<{ path: string; content?: string; error?: string; warning?: string }> = [];
                     
-                    for (const path of paths) {
-                        const readCheck = tracker.recordRead(path);
+                    let remaining = 30_000;
+                    for (const requested of paths) {
+                        const { path, startLine, endLine } = typeof requested === "string" ? { path: requested, startLine: undefined, endLine: undefined } : requested;
+                        const readCheck = tracker.recordRead(`${path}:${startLine ?? 1}-${endLine ?? "next"}`);
                         if (readCheck.shouldStop) {
                             results.push({ path, error: readCheck.message });
                             continue;
@@ -429,7 +375,7 @@ export function createFreestyleTools(mcpClient: any) {
                         try {
                             const result = await mcpClient.callTool({
                                 name: "read_file",
-                                arguments: { path },
+                                arguments: { path, startLine, endLine },
                             });
                             
                             let content = "";
@@ -440,7 +386,8 @@ export function createFreestyleTools(mcpClient: any) {
                                 }
                             }
                             
-                            const fileResult: any = { path, content: content || "" };
+                            const fileResult: any = { path, content: content.slice(0, remaining) };
+                            remaining -= fileResult.content.length;
                             
                             if (readCheck.shouldWarn && readCheck.message) {
                                 fileResult.warning = readCheck.message;
@@ -461,6 +408,15 @@ export function createFreestyleTools(mcpClient: any) {
                     console.error("readFiles error:", error);
                     return `Error reading files: ${error instanceof Error ? error.message : "Unknown error"}`;
                 }
+            },
+        },
+        searchCode: {
+            description: "Find relevant code lines by literal text in /template, excluding dependencies and build output. Returns at most 30 path:line snippets.",
+            inputSchema: z.object({ query: z.string().min(1), path: z.string().optional() }),
+            execute: async ({ query, path }: { query: string; path?: string }) => {
+                const result = await mcpClient.callTool({ name: "search_code", arguments: { query, path: path || "/template" } });
+                const first = result.content?.[0];
+                return first && "text" in first ? first.text : "(no matches)";
             },
         },
         writeFiles: {
@@ -856,4 +812,3 @@ export function createFreestyleTools(mcpClient: any) {
         },
     };
 }
-

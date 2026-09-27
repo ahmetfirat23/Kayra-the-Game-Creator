@@ -11,6 +11,8 @@ import {
   handleTool,
   layoutTouchPath,
   expoRestartOrder,
+  fileExcerpt,
+  searchCode,
   compileErrorText,
   currentCompileError,
   fixingPreviewPage,
@@ -101,6 +103,27 @@ describe("kayra-bridge edit_file", () => {
   });
 });
 
+describe("bounded code inspection", () => {
+  it("returns numbered ranges with a continuation instead of a whole file", () => {
+    const content = Array.from({ length: 300 }, (_, i) => `line ${i + 1}`).join("\n");
+    const first = fileExcerpt(content);
+    assert.match(first, /^1: line 1/);
+    assert.match(first, /continue at 161/);
+    assert.doesNotMatch(first, /300: line 300/);
+    const later = fileExcerpt(content, 200, 210);
+    assert.match(later, /^200: line 200/);
+    assert.match(later, /210: line 210/);
+  });
+
+  it("searches source lines without returning full file content", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "kayra-search-"));
+    await writeFile(path.join(dir, "Game.tsx"), "first\nconst playerSpeed = 3;\nlast", "utf8");
+    const result = await searchCode(dir, "playerSpeed");
+    assert.match(result, /Game\.tsx:2: const playerSpeed = 3/);
+    assert.doesNotMatch(result, /first|last/);
+  });
+});
+
 describe("kayra-bridge refused commands", () => {
   it("refuses reset-project, lint, and a second dev server", async () => {
     for (const command of [
@@ -168,7 +191,7 @@ describe("kayra-bridge refused commands", () => {
     assert.doesNotMatch(RESTART_SCRIPT_PATH, /expo/i);
     assert.match(script, /kayra-restart-preview\.log/);
     assert.match(script, /flock -n \/tmp\/kayra-expo\.lock/);
-    assert.equal(BRIDGE_HEALTH, "ok 12");
+    assert.equal(BRIDGE_HEALTH, "ok 13");
     assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
     assert.deepEqual(expoRestartOrder({}), []);
   });
