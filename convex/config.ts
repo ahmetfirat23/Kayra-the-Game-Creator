@@ -1,6 +1,6 @@
 export const CONFIG = {
   // User limits
-  FREE_TIER_DAILY_LIMIT: 50,
+  FREE_TIER_DAILY_LIMIT: 10,
   MAX_MESSAGE_LENGTH: 10000,
   MAX_API_KEY_LENGTH: 200,
   MIN_API_KEY_LENGTH: 20,
@@ -25,7 +25,7 @@ export const CONFIG = {
   DEFAULT_PRO_MONTHLY_TOKEN_LIMIT: 7_000_000,
   
   // Free tier token cap
-  FREE_TIER_DAILY_TOKEN_CAP: 5_000_000,
+  FREE_TIER_DAILY_TOKEN_CAP: 1_000_000,
 
   // Model settings
   LANGUAGE_MODEL: "gpt-6-luna"
