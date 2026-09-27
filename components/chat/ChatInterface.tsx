@@ -222,13 +222,10 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
     if (!selectedChatId) return;
 
     const onPageHide = () => sendSandboxDeleteBeacon(selectedChatId, "pagehide");
-    const onBeforeUnload = () => sendSandboxDeleteBeacon(selectedChatId, "beforeunload");
 
     window.addEventListener("pagehide", onPageHide);
-    window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
       window.removeEventListener("pagehide", onPageHide);
-      window.removeEventListener("beforeunload", onBeforeUnload);
     };
   }, [selectedChatId, sendSandboxDeleteBeacon]);
 

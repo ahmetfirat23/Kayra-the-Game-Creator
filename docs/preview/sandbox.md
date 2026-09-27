@@ -35,8 +35,8 @@ Reload calls `ensure`. `ensureGameSandbox` replays the last successful commit fr
 | Action | Writes / returns |
 | --- | --- |
 | `ensure` (default) | May delete a stale VM (heartbeat ≥ 60s old, unless `isAiTurn`), then `ensureGameSandbox`, `registerSandbox`, returns `{ previewUrl }`. Template install cap 200s |
-| `heartbeat` | `touchSandbox`; extend timeout 60s. If VM gone (`410` / `SANDBOX_STOPPED`), `clearSandbox` so the iframe is not left on a dead address |
-| `leave` | Wait 3s; if heartbeat refreshed `updatedAt`, cancel; else delete VM + `clearSandbox` |
+| `heartbeat` | `touchSandbox` before VM/network checks; extend timeout 60s. If VM gone (`410` / `SANDBOX_STOPPED`), `clearSandbox` so the iframe is not left on a dead address |
+| `leave` | Wait 15s; cancel if a heartbeat refreshed `updatedAt` or an AI turn is running; otherwise delete VM + `clearSandbox` |
 | `delete` | Delete VM + `clearSandbox` immediately |
 | `download` | Base64 tar of `/template` (excludes `node_modules`, `.git`, `.expo`, `.cache`); does not create a sandbox |
 
@@ -46,7 +46,7 @@ Reload calls `ensure`. `ensureGameSandbox` replays the last successful commit fr
 - Stale heartbeat threshold: **60 seconds** (`shouldDeleteSession` / `shouldRecreateStaleSandbox` in `lib/sandbox-lifecycle.ts`). Mid-AI-turn ensure does not recreate on stale heartbeat alone.
 - `sandboxToStopOnSwitch`: switching chats `delete`s the previous sandbox. Opening a chat does **not** call `ensure`.
 - Reload calls `ensure` only when `shouldEnsureSandboxOnReload(isAiTurn)` is true (`isAiTurn` false).
-- `pagehide`, `beforeunload`, and `sign-out` map to `leave` via `sandboxActionForPageEvent` in `lib/sandbox-page.ts`. `visibility-hidden` does not. `ChatInterface` wires `pagehide` and `beforeunload`.
+- `pagehide`, `beforeunload`, and `sign-out` map to `leave` via `sandboxActionForPageEvent` in `lib/sandbox-page.ts`. `visibility-hidden` does not. `ChatInterface` sends one leave on `pagehide`.
 - Sending a message calls `ensure` before `sendMessage`.
 - `extendSandboxTimeout`: errors matching platform “maximum execution timeout” are swallowed; other errors are not.
 

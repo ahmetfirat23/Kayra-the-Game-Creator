@@ -32,7 +32,7 @@ type SandboxAction =
   | "leave"
   | "compile-error";
 
-const LEAVE_GRACE_MS = 3_000;
+const LEAVE_GRACE_MS = 15_000;
 
 type ThreadPage = {
   page?: Array<{ parts?: unknown }>;
@@ -168,7 +168,9 @@ export async function POST(req: Request) {
       const started = Date.now();
       await new Promise((resolve) => setTimeout(resolve, LEAVE_GRACE_MS));
       const access = await convex.query(api.chat.getSandboxAccess, { chatId });
-      if (access && access.updatedAt > started) {
+      if (!access) return NextResponse.json({ ok: true });
+      const chat = await convex.query(api.chat.getChat, { chatId });
+      if (chat?.isAiTurn || access.updatedAt > started) {
         return NextResponse.json({ ok: true, cancelled: true });
       }
       await deleteGameSandbox(chatId, { client });
@@ -205,7 +207,9 @@ export async function POST(req: Request) {
       }
 
       // A heartbeat means the page is still open, including a hidden tab whose
-      // timer was throttled. It also cancels a leave started by reload.
+      // timer was throttled. Touch before slow VM/network checks so a leave
+      // started by reload sees the new page in time.
+      await convex.mutation(api.chat.touchSandbox, { chatId });
       const sandbox = await client.get({ name: sandboxName(chatId) });
       if (!sandbox) {
         await convex.mutation(api.chat.clearSandbox, { chatId });
@@ -231,7 +235,6 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true, recovered: true });
       }
 
-      await convex.mutation(api.chat.touchSandbox, { chatId });
       try {
         await extendSandboxTimeout(sandbox, 60_000);
       } catch (error) {
