@@ -1,6 +1,6 @@
 # Preview bridge
 
-`lib/kayra-bridge.mjs` runs inside the sandbox on port **3000**. It authenticates tool POSTs, proxies the browser preview to Expo on port **19006**, and strips framing headers so the app can load in Kayra’s iframe.
+`lib/kayra-bridge.mjs` runs inside the sandbox on port **3000**. It authenticates tool POSTs, proxies the browser preview to Expo on port **19006**, and strips framing headers so the app can load in Kayra’s iframe. Its preview health check tests whether Expo is listening on that port; bundling can continue after the commit tool returns.
 
 ## Saved as
 
@@ -23,7 +23,7 @@ Proxy strips response headers `x-frame-options` and `content-security-policy` (a
 
 ## Routes / tools on the bridge
 
-`handleTool` implements `list_directory`, `read_file`, `write_file`, `edit_file`, `create_directory`, `search_files`, `npm_install`, `npm_run_lint`, `git_commit_and_push`, `exec`.
+`handleTool` implements `list_directory`, `read_file`, `search_code`, `write_file`, `edit_file`, `create_directory`, `search_files`, `npm_install`, `npm_run_lint`, `git_commit_and_push`, `exec`. Reads and searches return bounded excerpts.
 
 `refusedShell` blocks:
 

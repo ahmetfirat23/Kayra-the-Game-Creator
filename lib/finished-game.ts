@@ -93,7 +93,11 @@ function commitSucceeded(part: ToolPart): boolean {
   const name = toolName(part);
   if (name !== "commitAndPush" && name !== "git_commit_and_push") return false;
   if (!callSettled(part)) return false;
-  return !/^Error committing/i.test(outputText(part.output));
+  const output = outputText(part.output);
+  // Older bridge versions mislabeled a successful Git commit as failed when
+  // Expo needed longer to bundle. Those files still need to be replayable.
+  if (/^Error committing: Expo did not become ready after the game was committed\./i.test(output)) return true;
+  return !/^Error committing/i.test(output);
 }
 
 /** Number of successful commits currently visible in the UI message history. */

@@ -14,11 +14,12 @@ Tool calls change files on the sandbox VM under `/template`. They do not write C
 
 | Tool | After bridge guards |
 | --- | --- |
-| `listDirectory` | Recursive listing of `/template` (skips descending into `node_modules` / `.git`) |
-| `readFiles` | Read one or more paths; tracker can warn/stop on repeat reads |
+| `listDirectory` | Up to 100 direct children of one directory |
+| `readFiles` | Up to four paths or numbered ranges; bridge returns at most 160 lines per file |
+| `searchCode` | Literal code search with path and line snippets |
 | `writeFiles` | Create/overwrite full files; tracker can warn/stop on repeat writes |
 | `editFiles` | Line/text replacements via bridge `edit_file` |
-| `commitAndPush` | Bridge `git_commit_and_push`: `git add` + commit. Does **not** typecheck or start a build |
+| `commitAndPush` | Bridge `git_commit_and_push`: Git commit, then Expo restart. A slow web bundle is reported as still starting; Git failure is reported separately. No typecheck |
 | `searchFiles` | Find files under a path matching a pattern |
 | `createDirectory` | `mkdir -p` style create |
 | `npmInstall` | Bridge `npm_install`. Empty package list does **not** run npm |

@@ -71,6 +71,14 @@ describe("finishedGameFromUiMessages", () => {
     assert.equal(game, null);
   });
 
+  it("replays a Git commit that an older bridge mislabeled after Expo timed out", () => {
+    const game = finishedGameFromUiMessages([{ parts: [
+      writePart([{ path: SCREEN, content: "saved game" }]),
+      commitPart("Error committing: Expo did not become ready after the game was committed.\nWeb bundle 99.2%"),
+    ] }]);
+    assert.equal(game?.files[0]?.content, "saved game");
+  });
+
   it("ignores a commit that failed", () => {
     const game = finishedGameFromUiMessages([
       {

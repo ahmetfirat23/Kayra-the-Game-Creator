@@ -386,7 +386,7 @@ async function ensureProcesses(sandbox: SandboxVm, token: string, newToken: bool
 
   const expoUp = await commandOk(
     sandbox,
-    "curl -sf -o /dev/null http://127.0.0.1:19006",
+    "(echo > /dev/tcp/127.0.0.1/19006) >/dev/null 2>&1",
   );
   if (!expoUp) {
     await sandbox.runCommand({

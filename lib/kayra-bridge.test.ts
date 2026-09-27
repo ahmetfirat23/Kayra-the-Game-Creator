@@ -22,6 +22,8 @@ import {
   previewWaitingPage,
   RESTART_SCRIPT_PATH,
   refusedShell,
+  waitForExpoDownShell,
+  waitForExpoUpShell,
 } from "./kayra-bridge.mjs";
 
 function mockRes() {
@@ -125,6 +127,12 @@ describe("bounded code inspection", () => {
 });
 
 describe("kayra-bridge refused commands", () => {
+  it("checks Expo's listening port without waiting for a full web bundle", () => {
+    assert.match(waitForExpoUpShell(), /dev\/tcp\/127\.0\.0\.1\/19006/);
+    assert.match(waitForExpoDownShell(), /dev\/tcp\/127\.0\.0\.1\/19006/);
+    assert.doesNotMatch(waitForExpoUpShell(), /curl/);
+  });
+
   it("refuses reset-project, lint, and a second dev server", async () => {
     for (const command of [
       "npm run reset-project",
@@ -191,7 +199,7 @@ describe("kayra-bridge refused commands", () => {
     assert.doesNotMatch(RESTART_SCRIPT_PATH, /expo/i);
     assert.match(script, /kayra-restart-preview\.log/);
     assert.match(script, /flock -n \/tmp\/kayra-expo\.lock/);
-    assert.equal(BRIDGE_HEALTH, "ok 13");
+    assert.equal(BRIDGE_HEALTH, "ok 14");
     assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
     assert.deepEqual(expoRestartOrder({}), []);
   });
