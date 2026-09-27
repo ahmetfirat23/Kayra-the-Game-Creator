@@ -5,11 +5,8 @@ import {
   previewForClient,
   shouldShowLivePreview,
   sandboxName,
-  sandboxToStopOnSwitch,
-  shouldDeleteSession,
   shouldEnsureSandboxOnReload,
   shouldRecoverPreview,
-  shouldRecreateStaleSandbox,
 } from "./sandbox-lifecycle.ts";
 
 describe("sandboxName", () => {
@@ -32,73 +29,6 @@ describe("sandboxName", () => {
   });
 });
 
-describe("shouldDeleteSession", () => {
-  const now = 1_000_000;
-
-  it("deletes when leave was requested (pagehide / sign-out)", () => {
-    assert.equal(
-      shouldDeleteSession({
-        lastHeartbeatAt: now - 5_000,
-        now,
-        leaveRequested: true,
-      }),
-      true,
-    );
-  });
-
-  it("deletes when there has been no heartbeat for 60 seconds", () => {
-    assert.equal(
-      shouldDeleteSession({
-        lastHeartbeatAt: now - 60_000,
-        now,
-        leaveRequested: false,
-      }),
-      true,
-    );
-    assert.equal(
-      shouldDeleteSession({
-        lastHeartbeatAt: now - 60_001,
-        now,
-        leaveRequested: false,
-      }),
-      true,
-    );
-  });
-
-  it("keeps the session when a heartbeat is newer than 60 seconds", () => {
-    assert.equal(
-      shouldDeleteSession({
-        lastHeartbeatAt: now - 59_999,
-        now,
-        leaveRequested: false,
-      }),
-      false,
-    );
-    assert.equal(
-      shouldDeleteSession({
-        lastHeartbeatAt: now,
-        now,
-        leaveRequested: false,
-      }),
-      false,
-    );
-  });
-});
-
-describe("sandboxToStopOnSwitch", () => {
-  it("stops the chat that was left", () => {
-    assert.equal(sandboxToStopOnSwitch("chat-a", "chat-b"), "chat-a");
-  });
-
-  it("does not stop a machine when a chat is opened from nothing", () => {
-    assert.equal(sandboxToStopOnSwitch(null, "chat-a"), null);
-  });
-
-  it("does not stop the chat that is still selected", () => {
-    assert.equal(sandboxToStopOnSwitch("chat-a", "chat-a"), null);
-  });
-});
-
 describe("shouldEnsureSandboxOnReload", () => {
   it("refuses ensure while Kayra is mid-turn so Reload cannot kill the tool bridge", () => {
     assert.equal(shouldEnsureSandboxOnReload(true), false);
@@ -117,43 +47,6 @@ describe("shouldRecoverPreview", () => {
   it("does not interrupt an AI turn or restart a healthy preview", () => {
     assert.equal(shouldRecoverPreview(true, false), false);
     assert.equal(shouldRecoverPreview(false, true), false);
-  });
-});
-
-describe("shouldRecreateStaleSandbox", () => {
-  const now = 1_000_000;
-
-  it("does not delete a stale VM while an AI turn is using it", () => {
-    assert.equal(
-      shouldRecreateStaleSandbox({
-        lastHeartbeatAt: now - 60_000,
-        now,
-        aiTurnInProgress: true,
-      }),
-      false,
-    );
-  });
-
-  it("still recreates a stale VM when no AI turn is in progress", () => {
-    assert.equal(
-      shouldRecreateStaleSandbox({
-        lastHeartbeatAt: now - 60_000,
-        now,
-        aiTurnInProgress: false,
-      }),
-      true,
-    );
-  });
-
-  it("keeps a fresh heartbeat even when idle", () => {
-    assert.equal(
-      shouldRecreateStaleSandbox({
-        lastHeartbeatAt: now - 10_000,
-        now,
-        aiTurnInProgress: false,
-      }),
-      false,
-    );
   });
 });
 

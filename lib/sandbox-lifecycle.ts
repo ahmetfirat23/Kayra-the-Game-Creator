@@ -8,26 +8,6 @@ export function sandboxName(chatId: string): string {
   return `${SANDBOX_PREFIX}${slug}`;
 }
 
-export type SessionDeleteInput = {
-  lastHeartbeatAt: number;
-  now: number;
-  leaveRequested: boolean;
-};
-
-/**
- * Whether the sandbox session should be deleted.
- * Leave (pagehide / sign-out) always deletes; otherwise delete when the
- * last heartbeat is at least 60 seconds old.
- */
-export function shouldDeleteSession({
-  lastHeartbeatAt,
-  now,
-  leaveRequested,
-}: SessionDeleteInput): boolean {
-  if (leaveRequested) return true;
-  return now - lastHeartbeatAt >= HEARTBEAT_STALE_MS;
-}
-
 export type SandboxSessionPreview = {
   previewUrl: string;
   updatedAt?: number;
@@ -52,15 +32,6 @@ export function previewForClient(
     previewUrl: session.previewUrl,
     live: now - updatedAt < HEARTBEAT_STALE_MS,
   };
-}
-
-/** Chat the user just left. Opening a chat does not start a machine. */
-export function sandboxToStopOnSwitch(
-  previousChatId: string | null,
-  nextChatId: string | null,
-): string | null {
-  if (!previousChatId || previousChatId === nextChatId) return null;
-  return previousChatId;
 }
 
 /**
@@ -135,27 +106,4 @@ export function nextPreviewEpoch(
 ): number {
   if (wasAiTurn && !isAiTurn) return epoch + 1;
   return epoch;
-}
-
-export type RecreateStaleInput = {
-  lastHeartbeatAt: number;
-  now: number;
-  aiTurnInProgress: boolean;
-};
-
-/**
- * Whether ensure should delete a stale sandbox before recreating it.
- * A mid-turn reply still needs the live VM even if the heartbeat looks old.
- */
-export function shouldRecreateStaleSandbox({
-  lastHeartbeatAt,
-  now,
-  aiTurnInProgress,
-}: RecreateStaleInput): boolean {
-  if (aiTurnInProgress) return false;
-  return shouldDeleteSession({
-    lastHeartbeatAt,
-    now,
-    leaveRequested: false,
-  });
 }

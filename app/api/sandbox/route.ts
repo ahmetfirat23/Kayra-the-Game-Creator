@@ -18,7 +18,6 @@ import {
 import {
   sandboxName,
   shouldRecoverPreview,
-  shouldRecreateStaleSandbox,
 } from "../../../lib/sandbox-lifecycle";
 
 export const runtime = "nodejs";
@@ -29,10 +28,7 @@ type SandboxAction =
   | "delete"
   | "download"
   | "heartbeat"
-  | "leave"
   | "compile-error";
-
-const LEAVE_GRACE_MS = 15_000;
 
 type ThreadPage = {
   page?: Array<{ parts?: unknown }>;
@@ -164,20 +160,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    if (action === "leave") {
-      const started = Date.now();
-      await new Promise((resolve) => setTimeout(resolve, LEAVE_GRACE_MS));
-      const access = await convex.query(api.chat.getSandboxAccess, { chatId });
-      if (!access) return NextResponse.json({ ok: true });
-      const chat = await convex.query(api.chat.getChat, { chatId });
-      if (chat?.isAiTurn || access.updatedAt > started) {
-        return NextResponse.json({ ok: true, cancelled: true });
-      }
-      await deleteGameSandbox(chatId, { client });
-      await convex.mutation(api.chat.clearSandbox, { chatId });
-      return NextResponse.json({ ok: true });
-    }
-
     if (action === "download") {
       const access = await convex.query(api.chat.getSandboxAccess, { chatId });
       if (!access) {
@@ -206,9 +188,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true });
       }
 
-      // A heartbeat means the page is still open, including a hidden tab whose
-      // timer was throttled. Touch before slow VM/network checks so a leave
-      // started by reload sees the new page in time.
+      // Touch before slow VM/network checks so other tabs see a live preview.
       await convex.mutation(api.chat.touchSandbox, { chatId });
       const sandbox = await client.get({ name: sandboxName(chatId) });
       if (!sandbox) {
@@ -276,18 +256,6 @@ export async function POST(req: Request) {
     // ensure (default)
     const access = await convex.query(api.chat.getSandboxAccess, { chatId });
     const chat = await convex.query(api.chat.getChat, { chatId });
-    if (
-      access &&
-      shouldRecreateStaleSandbox({
-        lastHeartbeatAt: access.updatedAt,
-        now: Date.now(),
-        aiTurnInProgress: Boolean(chat?.isAiTurn),
-      })
-    ) {
-      await deleteGameSandbox(chatId, { client });
-      await convex.mutation(api.chat.clearSandbox, { chatId });
-    }
-
     const game = await committedGame(convex, chat?.threadId);
     const ensured = await ensureGameSandbox(chatId, {
       client,

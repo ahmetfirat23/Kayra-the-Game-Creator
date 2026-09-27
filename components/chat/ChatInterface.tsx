@@ -9,11 +9,9 @@ import { useRouter } from "next/navigation";
 import { CONFIG } from "../../convex/config";
 import { compileFixPrompt, isHiddenCompileFix } from "../../lib/compile-error";
 import { successfulCommitCountFromUiMessages } from "../../lib/finished-game";
-import { sandboxActionForPageEvent } from "../../lib/sandbox-page";
 import {
   previewFrameSrc,
   previewPane,
-  sandboxToStopOnSwitch,
   shouldEnsureSandboxOnReload,
 } from "../../lib/sandbox-lifecycle";
 import { ThemeToggle } from "../ui/ThemeToggle";
@@ -139,17 +137,6 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
     [],
   );
 
-  const sendSandboxDeleteBeacon = useCallback((chatId: Id<"chats">, event: "pagehide" | "beforeunload" | "sign-out") => {
-    const action = sandboxActionForPageEvent(event);
-    if (!action) return;
-    const body = JSON.stringify({ chatId, action });
-    void fetch("/api/sandbox", {
-      method: "POST",
-      keepalive: true,
-      headers: { "Content-Type": "application/json" },
-      body,
-    });
-  }, []);
   
   useLayoutEffect(() => {
     const container = messagesContainerRef.current;
@@ -217,28 +204,6 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   useEffect(() => {
     syncUser();
   }, [syncUser]);
-
-  useEffect(() => {
-    if (!selectedChatId) return;
-
-    const onPageHide = () => sendSandboxDeleteBeacon(selectedChatId, "pagehide");
-
-    window.addEventListener("pagehide", onPageHide);
-    return () => {
-      window.removeEventListener("pagehide", onPageHide);
-    };
-  }, [selectedChatId, sendSandboxDeleteBeacon]);
-
-  const previousChatId = useRef<Id<"chats"> | null>(null);
-  useEffect(() => {
-    const previous = previousChatId.current;
-    previousChatId.current = selectedChatId;
-    const stopId = sandboxToStopOnSwitch(previous, selectedChatId);
-    if (!stopId) return;
-    void postSandbox(stopId as Id<"chats">, "delete").catch(() => {
-      // The machine may already be stopped.
-    });
-  }, [selectedChatId, postSandbox]);
 
   const reloadGame = async () => {
     if (!selectedChatId || isPreparing) return;
