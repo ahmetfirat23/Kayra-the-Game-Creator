@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
@@ -101,8 +101,11 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
 
   const firstChatId = chats.length > 0 ? chats[0]._id : null;
   const hasRestoredChat = useRef(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const messagesContentRef = useRef<HTMLDivElement>(null);
+  const scrolledChatIdRef = useRef<Id<"chats"> | null>(null);
   const [shownByokFallbackNotice, setShownByokFallbackNotice] = useState(false);
+  const lastMessageId = messages[messages.length - 1]?.id;
 
   const postSandbox = useCallback(
     async (chatId: Id<"chats">, action: "ensure" | "delete" | "download" | "heartbeat") => {
@@ -134,11 +137,53 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
     });
   }, []);
   
-  useEffect(() => {
-    if (messagesEndRef.current && messages.length > 0) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+  useLayoutEffect(() => {
+    const container = messagesContainerRef.current;
+    const content = messagesContentRef.current;
+    if (!container || !content || !selectedChatId || messages.length === 0) return;
+
+    const justOpened = scrolledChatIdRef.current !== selectedChatId;
+
+    const scrollToEnd = (behavior: ScrollBehavior) => {
+      container.scrollTo({ top: container.scrollHeight, behavior });
+    };
+
+    if (justOpened) {
+      let adjusting = true;
+      scrollToEnd("auto");
+      const observer = new ResizeObserver(() => {
+        adjusting = true;
+        scrollToEnd("auto");
+        requestAnimationFrame(() => {
+          adjusting = false;
+        });
+      });
+      observer.observe(content);
+      const markSettled = () => {
+        scrolledChatIdRef.current = selectedChatId;
+        observer.disconnect();
+      };
+      const onScroll = () => {
+        if (adjusting) return;
+        const distanceFromBottom =
+          container.scrollHeight - container.scrollTop - container.clientHeight;
+        if (distanceFromBottom > 80) markSettled();
+      };
+      container.addEventListener("scroll", onScroll, { passive: true });
+      const release = requestAnimationFrame(() => {
+        adjusting = false;
+      });
+      const stop = window.setTimeout(markSettled, 1000);
+      return () => {
+        observer.disconnect();
+        container.removeEventListener("scroll", onScroll);
+        cancelAnimationFrame(release);
+        window.clearTimeout(stop);
+      };
     }
-  }, [messages.length, selectedChatId]);
+
+    scrollToEnd("smooth");
+  }, [selectedChatId, messages.length, lastMessageId]);
   
   const showToast = (message: string, type: "error" | "success" | "info" = "info") => {
     setToast({ message, type });
@@ -723,7 +768,11 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
           mobileView === "chat" ? "flex flex-1" : "hidden md:flex md:h-full"
         }`}>
           {/* Messages */}
-          <div className="flex-1 px-4 pt-14 pb-4 md:p-6 overflow-y-auto overflow-x-hidden space-y-4 min-h-0">
+          <div
+            ref={messagesContainerRef}
+            className="flex-1 px-4 pt-14 pb-4 md:p-6 overflow-y-auto overflow-x-hidden min-h-0"
+          >
+            <div ref={messagesContentRef} className="space-y-4">
             {selectedChatId ? (
               messages && messages.length > 0 ? (
                 messages.map((msg, idx) => {
@@ -755,7 +804,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
                   : "Select a project to continue"}
               </div>
             )}
-            <div ref={messagesEndRef} />
+            </div>
           </div>
 
           {/* Input form */}
