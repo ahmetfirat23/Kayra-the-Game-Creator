@@ -148,6 +148,6 @@ describe("kayra-bridge refused commands", () => {
     const script = expoRestartScript();
     assert.match(script, /max-old-space-size=1536/);
     assert.match(script, /pkill -f 'expo start'/);
-    assert.equal(BRIDGE_HEALTH, "ok 2");
+    assert.equal(BRIDGE_HEALTH, "ok 3");
   });
 });
