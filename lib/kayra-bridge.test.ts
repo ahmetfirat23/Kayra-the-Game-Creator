@@ -11,6 +11,10 @@ import {
   handleTool,
   layoutTouchPath,
   expoRestartOrder,
+  compileErrorText,
+  currentCompileError,
+  fixingPreviewPage,
+  noteCompileError,
   previewResponseHeaders,
   previewWaitingPage,
   refusedShell,
@@ -156,7 +160,7 @@ describe("kayra-bridge refused commands", () => {
     assert.match(script, /--clear/);
     assert.match(script, /rm -rf \/template\/\.expo/);
     assert.match(script, /node_modules\/\.cache/);
-    assert.equal(BRIDGE_HEALTH, "ok 7");
+    assert.equal(BRIDGE_HEALTH, "ok 8");
     assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
     assert.deepEqual(expoRestartOrder({}), []);
   });
@@ -172,5 +176,17 @@ describe("kayra-bridge refused commands", () => {
     assert.equal(headers["Content-Type"], "text/html");
     assert.equal("ETag" in headers, false);
     assert.equal("X-Frame-Options" in headers, false);
+  });
+
+  it("keeps a compile error for the agent and shows a fixing screen", () => {
+    const error = compileErrorText(500, '{"message":"SyntaxError: Unexpected token"}');
+    assert.match(error || "", /SyntaxError/);
+    assert.equal(compileErrorText(200, "SyntaxError: Unexpected token"), null);
+    assert.equal(compileErrorText(404, "missing file"), null);
+    noteCompileError(error);
+    assert.match(currentCompileError(), /SyntaxError/);
+    const page = fixingPreviewPage();
+    assert.match(page, /Kayra is fixing your game/);
+    assert.doesNotMatch(page, /SyntaxError/);
   });
 });

@@ -7,6 +7,7 @@ import { Id } from "../../convex/_generated/dataModel";
 import { UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { CONFIG } from "../../convex/config";
+import { compileFixPrompt, isHiddenCompileFix } from "../../lib/compile-error";
 import { sandboxActionForPageEvent } from "../../lib/sandbox-page";
 import {
   nextPreviewEpoch,
@@ -97,6 +98,8 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   );
   
   const sendMessage = useMutation(api.chat.sendMessage);
+  const reportedCompileErrors = useRef(new Set<string>());
+  const reportingCompileError = useRef(false);
   const createChat = useMutation(api.chat.createChat);
 
   const firstChatId = chats.length > 0 ? chats[0]._id : null;
@@ -108,7 +111,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   const lastMessageId = messages[messages.length - 1]?.id;
 
   const postSandbox = useCallback(
-    async (chatId: Id<"chats">, action: "ensure" | "delete" | "download" | "heartbeat") => {
+    async (chatId: Id<"chats">, action: "ensure" | "delete" | "download" | "heartbeat" | "compile-error") => {
       const response = await fetch("/api/sandbox", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -537,6 +540,35 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
     previewKnown: preview !== undefined,
   });
 
+  useEffect(() => {
+    if (!selectedChatId || pane !== "game" || isAiTurn || isPreparing) return;
+    let stopped = false;
+    const look = async () => {
+      if (stopped || reportingCompileError.current || reportedCompileErrors.current.size >= 3) return;
+      reportingCompileError.current = true;
+      try {
+        const payload = await postSandbox(selectedChatId, "compile-error");
+        const error = typeof payload.error === "string" ? payload.error.trim() : "";
+        if (!error || stopped || reportedCompileErrors.current.has(error)) return;
+        await sendMessage({
+          chatId: selectedChatId,
+          text: compileFixPrompt(error),
+        });
+        reportedCompileErrors.current.add(error);
+      } catch {
+        // The next look tries again.
+      } finally {
+        reportingCompileError.current = false;
+      }
+    };
+    void look();
+    const interval = window.setInterval(() => void look(), 8_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+    };
+  }, [selectedChatId, pane, isAiTurn, isPreparing, postSandbox, sendMessage]);
+
   return (
     <main className="relative flex flex-col h-[100dvh] md:h-screen bg-gradient-to-br from-[#FAFBFC] via-white to-[#F8F9FA] dark:from-[#1A202C] dark:via-[#1A202C] dark:to-[#2D3748] text-[#4A5568] dark:text-[#E2E8F0]">
       <div className="md:hidden pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center justify-between gap-2 p-2">
@@ -776,6 +808,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
             {selectedChatId ? (
               messages && messages.length > 0 ? (
                 messages.map((msg, idx) => {
+                  if (isHiddenCompileFix(msg.text)) return null;
                   const nextMsg = messages[idx + 1];
                   const isLastAssistantInSequence = msg.role === "assistant" && (!nextMsg || nextMsg.role === "user");
                   

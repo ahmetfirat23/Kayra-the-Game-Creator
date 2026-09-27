@@ -23,7 +23,13 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-type SandboxAction = "ensure" | "delete" | "download" | "heartbeat" | "leave";
+type SandboxAction =
+  | "ensure"
+  | "delete"
+  | "download"
+  | "heartbeat"
+  | "leave"
+  | "compile-error";
 
 const LEAVE_GRACE_MS = 3_000;
 
@@ -201,6 +207,29 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true, deleted: true });
       }
       return NextResponse.json({ ok: true });
+    }
+
+    if (action === "compile-error") {
+      const access = await convex.query(api.chat.getSandboxAccess, { chatId });
+      if (!access?.previewUrl || !access.token) {
+        return NextResponse.json({ error: null });
+      }
+      try {
+        const origin = access.previewUrl.replace(/\/$/, "");
+        const response = await fetch(`${origin}/__kayra/compile-error`, {
+          headers: { Authorization: `Bearer ${access.token}` },
+          cache: "no-store",
+        });
+        if (!response.ok) return NextResponse.json({ error: null });
+        const payload = (await response.json()) as { error?: unknown };
+        const error =
+          typeof payload.error === "string" && payload.error.trim()
+            ? payload.error
+            : null;
+        return NextResponse.json({ error });
+      } catch {
+        return NextResponse.json({ error: null });
+      }
     }
 
     // ensure (default)
