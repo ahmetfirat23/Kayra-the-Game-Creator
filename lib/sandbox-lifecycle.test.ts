@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   previewForClient,
   sandboxName,
+  sandboxToStopOnSwitch,
   shouldDeleteSession,
 } from "./sandbox-lifecycle.ts";
 
@@ -76,6 +77,20 @@ describe("shouldDeleteSession", () => {
       }),
       false,
     );
+  });
+});
+
+describe("sandboxToStopOnSwitch", () => {
+  it("stops the chat that was left", () => {
+    assert.equal(sandboxToStopOnSwitch("chat-a", "chat-b"), "chat-a");
+  });
+
+  it("does not stop a machine when a chat is opened from nothing", () => {
+    assert.equal(sandboxToStopOnSwitch(null, "chat-a"), null);
+  });
+
+  it("does not stop the chat that is still selected", () => {
+    assert.equal(sandboxToStopOnSwitch("chat-a", "chat-a"), null);
   });
 });
 

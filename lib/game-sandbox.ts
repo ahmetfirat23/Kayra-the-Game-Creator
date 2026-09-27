@@ -277,20 +277,52 @@ export async function downloadGameArchive(
  * Production adapter around `@vercel/sandbox`.
  * Kept separate so unit tests inject a fake client without network or credentials.
  */
+export function isSandboxGoneError(error: unknown): boolean {
+  const status =
+    (error as { response?: { status?: number } })?.response?.status ??
+    (error as { status?: number })?.status;
+  if (status === 404 || status === 410) return true;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /SANDBOX_STOPPED|sandbox was stopped/i.test(message);
+}
+
+function sessionStatus(sandbox: SandboxVm): string | undefined {
+  const status = (sandbox as { session?: { status?: string } }).session?.status;
+  return typeof status === "string" ? status : undefined;
+}
+
+async function discardIfStopped(sandbox: SandboxVm): Promise<SandboxVm | null> {
+  const status = sessionStatus(sandbox);
+  if (status !== "stopped" && status !== "stopping") return sandbox;
+  try {
+    await sandbox.delete();
+  } catch {
+    // The stopped VM is already gone.
+  }
+  return null;
+}
+
 export function createVercelSandboxClient(): SandboxClient {
   return {
     async getOrCreate(params) {
       const { Sandbox } = await import("@vercel/sandbox");
-      return Sandbox.getOrCreate(params) as unknown as SandboxVm;
+      try {
+        const sandbox = (await Sandbox.getOrCreate(params)) as unknown as SandboxVm;
+        const live = await discardIfStopped(sandbox);
+        if (live) return live;
+        return (await Sandbox.create(params)) as unknown as SandboxVm;
+      } catch (error) {
+        if (!isSandboxGoneError(error)) throw error;
+        return (await Sandbox.create(params)) as unknown as SandboxVm;
+      }
     },
     async get(params) {
       const { Sandbox } = await import("@vercel/sandbox");
       try {
-        return (await Sandbox.get(params)) as unknown as SandboxVm;
+        const sandbox = (await Sandbox.get(params)) as unknown as SandboxVm;
+        return discardIfStopped(sandbox);
       } catch (error) {
-        const status = (error as { response?: { status?: number } })?.response
-          ?.status;
-        if (status === 404) return null;
+        if (isSandboxGoneError(error)) return null;
         throw error;
       }
     },

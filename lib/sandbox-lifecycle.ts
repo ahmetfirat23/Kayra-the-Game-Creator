@@ -43,3 +43,12 @@ export type ClientPreview = {
 export function previewForClient(session: SandboxSessionPreview): ClientPreview {
   return { previewUrl: session.previewUrl };
 }
+
+/** Chat the user just left. Opening a chat does not start a machine. */
+export function sandboxToStopOnSwitch(
+  previousChatId: string | null,
+  nextChatId: string | null,
+): string | null {
+  if (!previousChatId || previousChatId === nextChatId) return null;
+  return previousChatId;
+}

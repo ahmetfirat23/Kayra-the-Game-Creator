@@ -34,6 +34,6 @@ The caller must be signed in. `ChatInterface` calls `ensure` before `sendMessage
 
 ## Deletes and leftovers
 
-`sandboxActionForPageEvent` in `lib/sandbox-page.ts` maps `pagehide`, `beforeunload`, and `sign-out` to `leave`. `visibility-hidden` does not. `clearSandbox` removes the Convex row and does not delete the chat. `deleteChat` also removes sandbox rows, and calls Freestyle `deleteRepo` only when `isFreestyleRepoId` matches a legacy UUID.
+`sandboxActionForPageEvent` in `lib/sandbox-page.ts` maps `pagehide`, `beforeunload`, and `sign-out` to `leave`. `visibility-hidden` does not. Switching chats stops the sandbox that was left. Opening a chat does not start one. The preview pane shows "Reload the game" when that chat has messages and no running sandbox. A stopped sandbox (`410 SANDBOX_STOPPED`) is cleared so the iframe is not left on the dead address. `clearSandbox` removes the Convex row and does not delete the chat. `deleteChat` also removes sandbox rows, and calls Freestyle `deleteRepo` only when `isFreestyleRepoId` matches a legacy UUID.
 
 A crashed tab does not send `leave`. The sandbox then ends when its timeout runs out. `shouldDeleteSession` in `lib/sandbox-lifecycle.ts` treats a heartbeat older than 60 seconds as stale on the next `ensure`.

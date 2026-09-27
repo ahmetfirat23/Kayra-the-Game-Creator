@@ -8,6 +8,7 @@ import { UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { CONFIG } from "../../convex/config";
 import { sandboxActionForPageEvent } from "../../lib/sandbox-page";
+import { sandboxToStopOnSwitch } from "../../lib/sandbox-lifecycle";
 import { ThemeToggle } from "../ui/ThemeToggle";
 import { MessageComponent } from "./MessageComponent";
 import { ApiKeyModal, Toast, ConfirmDialog } from "../ui/Modals";
@@ -147,6 +148,32 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
       window.removeEventListener("beforeunload", onBeforeUnload);
     };
   }, [selectedChatId, sendSandboxDeleteBeacon]);
+
+  const previousChatId = useRef<Id<"chats"> | null>(null);
+  useEffect(() => {
+    const previous = previousChatId.current;
+    previousChatId.current = selectedChatId;
+    const stopId = sandboxToStopOnSwitch(previous, selectedChatId);
+    if (!stopId) return;
+    void postSandbox(stopId as Id<"chats">, "delete").catch(() => {
+      // The machine may already be stopped.
+    });
+  }, [selectedChatId, postSandbox]);
+
+  const reloadGame = async () => {
+    if (!selectedChatId || isPreparing) return;
+    setIsPreparing(true);
+    try {
+      await postSandbox(selectedChatId, "ensure");
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Could not reload the game.",
+        "error",
+      );
+    } finally {
+      setIsPreparing(false);
+    }
+  };
 
   useEffect(() => {
     if (!selectedChatId) return;
@@ -737,11 +764,20 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
                 <div className="text-5xl mb-4">🎮</div>
                 <div className="text-base">
                   {selectedChatId && messages.length > 0
-                    ? "Kayra is designing your game..."
+                    ? "This preview is stopped."
                     : selectedChatId
                     ? "Describe your game idea to get started"
                     : "Start typing to create your first game"}
                 </div>
+                {selectedChatId && messages.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void reloadGame()}
+                    className="mt-4 bg-gradient-to-r from-[#A8D4E6] to-[#88C4D6] dark:from-[#6BA8C8] dark:to-[#5B98B8] px-5 py-3 rounded-2xl font-bold text-sm text-white"
+                  >
+                    Reload the game
+                  </button>
+                )}
               </div>
             )}
           </div>

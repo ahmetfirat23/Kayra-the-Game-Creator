@@ -5,6 +5,7 @@ import {
   deleteGameSandbox,
   downloadGameArchive,
   ensureGameSandbox,
+  isSandboxGoneError,
   type SandboxClient,
   type SandboxVm,
 } from "./game-sandbox.ts";
@@ -67,6 +68,23 @@ function createFakeClient(options: {
     },
   };
 }
+
+describe("isSandboxGoneError", () => {
+  it("treats a stopped sandbox as gone", () => {
+    assert.equal(
+      isSandboxGoneError({ response: { status: 410 } }),
+      true,
+    );
+    assert.equal(
+      isSandboxGoneError(new Error("410 SANDBOX_STOPPED")),
+      true,
+    );
+  });
+
+  it("does not treat other failures as a stopped sandbox", () => {
+    assert.equal(isSandboxGoneError(new Error("network timeout")), false);
+  });
+});
 
 describe("ensureGameSandbox", () => {
   it("installs the 3D libraries when they are not in the template", async () => {

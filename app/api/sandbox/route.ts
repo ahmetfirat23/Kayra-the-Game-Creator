@@ -9,6 +9,7 @@ import {
   downloadGameArchive,
   ensureGameSandbox,
   extendSandboxTimeout,
+  isSandboxGoneError,
 } from "../../../lib/game-sandbox";
 import { sandboxName, shouldDeleteSession } from "../../../lib/sandbox-lifecycle";
 
@@ -153,7 +154,18 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true, deleted: true });
       }
       await convex.mutation(api.chat.touchSandbox, { chatId });
-      await extendSandboxTimeout(sandbox, 60_000);
+      try {
+        await extendSandboxTimeout(sandbox, 60_000);
+      } catch (error) {
+        if (!isSandboxGoneError(error)) throw error;
+        try {
+          await sandbox.delete();
+        } catch {
+          // Already stopped.
+        }
+        await convex.mutation(api.chat.clearSandbox, { chatId });
+        return NextResponse.json({ ok: true, deleted: true });
+      }
       return NextResponse.json({ ok: true });
     }
 
