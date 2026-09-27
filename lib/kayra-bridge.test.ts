@@ -16,6 +16,7 @@ import {
   fixingPreviewPage,
   noteCompileError,
   previewResponseHeaders,
+  previewErrorText,
   previewWaitingPage,
   RESTART_SCRIPT_PATH,
   refusedShell,
@@ -162,7 +163,8 @@ describe("kayra-bridge refused commands", () => {
     assert.match(script, /rm -rf \/template\/\.expo/);
     assert.match(script, /node_modules\/\.cache/);
     assert.doesNotMatch(RESTART_SCRIPT_PATH, /expo/i);
-    assert.equal(BRIDGE_HEALTH, "ok 9");
+    assert.match(script, /kayra-restart-preview\.log/);
+    assert.equal(BRIDGE_HEALTH, "ok 10");
     assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
     assert.deepEqual(expoRestartOrder({}), []);
   });
@@ -185,6 +187,8 @@ describe("kayra-bridge refused commands", () => {
     assert.match(error || "", /SyntaxError/);
     assert.equal(compileErrorText(200, "SyntaxError: Unexpected token"), null);
     assert.equal(compileErrorText(404, "missing file"), null);
+    assert.equal(previewErrorText(500, "x not found", true), "x not found");
+    assert.equal(previewErrorText(404, "missing file", false), null);
     noteCompileError(error);
     assert.match(currentCompileError(), /SyntaxError/);
     const page = fixingPreviewPage();
