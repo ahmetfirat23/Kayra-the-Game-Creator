@@ -97,6 +97,22 @@ describe("ensureGameSandbox", () => {
     assert.match(install, /npx expo install expo-gl expo-av expo-haptics/);
   });
 
+  it("keeps the sandbox when the timeout cannot be extended further", async () => {
+    const fake = createFakeClient({
+      getOrCreate: async () =>
+        createFakeVm({
+          extendTimeout: async () => {
+            throw new Error(
+              "Status code 400 is not ok: Failed to extend timeout: extension would exceed maximum execution timeout",
+            );
+          },
+        }),
+    });
+
+    const result = await ensureGameSandbox("chat-abc", { client: fake.client });
+    assert.equal(result.previewUrl, "https://preview.example");
+  });
+
   it("calls getOrCreate with persistent false, 1 vCPU, and a 10-minute timeout", async () => {
     const fake = createFakeClient();
 

@@ -8,6 +8,7 @@ import {
   deleteGameSandbox,
   downloadGameArchive,
   ensureGameSandbox,
+  extendSandboxTimeout,
 } from "../../../lib/game-sandbox";
 import { sandboxName, shouldDeleteSession } from "../../../lib/sandbox-lifecycle";
 
@@ -152,7 +153,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true, deleted: true });
       }
       await convex.mutation(api.chat.touchSandbox, { chatId });
-      await sandbox.extendTimeout(60_000);
+      await extendSandboxTimeout(sandbox, 60_000);
       return NextResponse.json({ ok: true });
     }
 

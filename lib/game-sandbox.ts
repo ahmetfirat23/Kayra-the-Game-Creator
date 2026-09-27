@@ -190,8 +190,9 @@ export async function ensureGameSandbox(
     resources: { vcpus: VCPUS },
   });
 
-  // Named reuse keeps the original deadline; slide it forward on every ensure.
-  await sandbox.extendTimeout(SESSION_TIMEOUT_MS);
+  // Named reuse keeps the original deadline. Adding time is refused once the
+  // platform maximum is reached, and that must not block the preview.
+  await extendSandboxTimeout(sandbox, SESSION_TIMEOUT_MS);
 
   await installTemplate(sandbox);
 
@@ -204,6 +205,19 @@ export async function ensureGameSandbox(
     execUrl: `${previewUrl}/__kayra/tool`,
     token,
   };
+}
+
+export async function extendSandboxTimeout(
+  sandbox: SandboxVm,
+  duration: number,
+): Promise<void> {
+  try {
+    await sandbox.extendTimeout(duration);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/maximum execution timeout/i.test(message)) return;
+    throw error;
+  }
 }
 
 export async function deleteGameSandbox(
