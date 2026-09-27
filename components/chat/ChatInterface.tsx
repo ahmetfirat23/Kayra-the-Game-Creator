@@ -41,6 +41,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
     onConfirm: () => void;
   } | null>(null);
   const [mobileView, setMobileView] = useState<"chat" | "preview">("chat");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   
   const chats = useQuery(api.chat.listChats) || [];
@@ -488,70 +489,124 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   };
 
   return (
-    <main className="flex flex-col h-[100dvh] md:h-screen bg-gradient-to-br from-[#FAFBFC] via-white to-[#F8F9FA] dark:from-[#1A202C] dark:via-[#1A202C] dark:to-[#2D3748] text-[#4A5568] dark:text-[#E2E8F0]">
-      {/* Top Bar */}
-      <div className="flex-shrink-0 px-4 md:px-6 py-3 md:py-2 border-b border-[#E8F4FC] dark:border-[#4A5568] bg-white/80 dark:bg-[#2D3748]/80 backdrop-blur-sm flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4 shadow-sm">
-        {/* Mobile: Row 1 - Logo + Theme/Settings/Account */}
-        <div className="flex items-center justify-between md:hidden">
-          <div className="flex items-center gap-2">
-            <div className="text-xl font-bold bg-gradient-to-r from-[#8B7EC8] via-[#7EB8D8] to-[#7EC8A8] bg-clip-text text-transparent">
-              Kayra
-            </div>
-            <div className="text-xl">🌳</div>
-          </div>
-          <div className="flex items-center gap-2">
-            {mounted && <ThemeToggle theme={theme} onToggle={toggleTheme} />}
-            <button
-              onClick={() => router.push("/settings")}
-              className="w-8 h-8 rounded-full font-bold bg-[#F8F9FA] dark:bg-[#1A202C] hover:bg-[#E8F4FC] dark:hover:bg-[#4A5568] text-[#718096] dark:text-[#A0AEC0] transition-all flex items-center justify-center"
-            >
-              ⚙️
-            </button>
-            <UserButton />
-          </div>
-        </div>
-        
-        {/* Mobile: Row 2 - Chat selector + action buttons */}
-        <div className="flex items-center gap-2 md:hidden">
-          <select
-            value={selectedChatId || ""}
-            onChange={(e) => setSelectedChatId(e.target.value as Id<"chats">)}
-            className="bg-[#F8F9FA] dark:bg-[#1A202C] border border-[#E8F4FC] dark:border-[#4A5568] rounded-xl px-3 py-2 text-xs text-[#4A5568] dark:text-[#E2E8F0] focus:outline-none focus:border-[#A8D4E6] dark:focus:border-[#6BA8C8] focus:ring-2 focus:ring-[#A8D4E6]/20 dark:focus:ring-[#6BA8C8]/20 flex-1 min-w-0 font-medium truncate transition-all"
-          >
-            {chats.map((chat) => (
-              <option key={chat._id} value={chat._id}>
-                {chat.name}
-              </option>
-            ))}
-          </select>
-          {selectedChatId && (
-            <button
-              onClick={() => handleDeleteChat(selectedChatId)}
-              className="bg-[#F0B8C4] hover:bg-[#E8A8B4] dark:bg-[#9A8ABC] dark:hover:bg-[#AA9ACC] px-3 py-2 rounded-xl text-xs text-white flex-shrink-0 transition-all hover:shadow-md"
-              title="Delete chat"
-            >
-              x Delete
-            </button>
-          )}
-          {selectedChat?.repoId && selectedChat.repoId !== "pending" && hasCommitted && (
-            <button
-              onClick={handleDownloadProject}
-              disabled={isDownloading}
-              className="bg-[#A8D4E6] hover:bg-[#98C4D6] dark:bg-[#7EB5D6] dark:hover:bg-[#8EC5E6] disabled:bg-[#E2E8F0] dark:disabled:bg-[#4A5568] disabled:cursor-not-allowed px-3 py-2 rounded-xl text-xs text-white flex-shrink-0 transition-all hover:shadow-md"
-              title="Download project as zip"
-            >
-              {isDownloading ? "..." : "⬇ Save"}
-            </button>
-          )}
+    <main className="relative flex flex-col h-[100dvh] md:h-screen bg-gradient-to-br from-[#FAFBFC] via-white to-[#F8F9FA] dark:from-[#1A202C] dark:via-[#1A202C] dark:to-[#2D3748] text-[#4A5568] dark:text-[#E2E8F0]">
+      <div className="md:hidden pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center justify-between gap-2 p-2">
+        <button
+          type="button"
+          aria-label="Open menu"
+          onClick={() => setMobileMenuOpen(true)}
+          className="pointer-events-auto h-9 w-9 rounded-full bg-white/90 dark:bg-[#1A202C]/90 border border-[#E8F4FC] dark:border-[#4A5568] shadow-sm flex flex-col items-center justify-center gap-1"
+        >
+          <span className="block h-0.5 w-4 rounded-full bg-[#4A5568] dark:bg-[#E2E8F0]" />
+          <span className="block h-0.5 w-4 rounded-full bg-[#4A5568] dark:bg-[#E2E8F0]" />
+          <span className="block h-0.5 w-4 rounded-full bg-[#4A5568] dark:bg-[#E2E8F0]" />
+        </button>
+        <div className="pointer-events-auto flex rounded-full overflow-hidden border border-[#E8F4FC] dark:border-[#4A5568] bg-white/90 dark:bg-[#1A202C]/90 shadow-sm">
           <button
-            onClick={handleCreateChat}
-            disabled={isCreatingChat}
-            className="bg-gradient-to-r from-[#B8E8C8] to-[#98D8B8] dark:from-[#6BB8C8] dark:to-[#5BA8B8] hover:from-[#A8D8B8] hover:to-[#88C8A8] dark:hover:from-[#7BC8D8] dark:hover:to-[#6BB8C8] disabled:from-[#E2E8F0] disabled:to-[#E2E8F0] dark:disabled:from-[#4A5568] dark:disabled:to-[#4A5568] disabled:cursor-not-allowed px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap text-white flex-shrink-0 transition-all hover:shadow-md"
+            type="button"
+            onClick={() => setMobileView("chat")}
+            className={`px-3 py-1.5 text-xs font-bold ${
+              mobileView === "chat"
+                ? "bg-gradient-to-r from-[#A8D4E6] to-[#88C4D6] dark:from-[#6BA8C8] dark:to-[#5B98B8] text-white"
+                : "text-[#718096] dark:text-[#A0AEC0]"
+            }`}
           >
-            {isCreatingChat ? "..." : "+ New"}
+            Chat
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileView("preview")}
+            className={`px-3 py-1.5 text-xs font-bold ${
+              mobileView === "preview"
+                ? "bg-gradient-to-r from-[#A8D4E6] to-[#88C4D6] dark:from-[#6BA8C8] dark:to-[#5B98B8] text-white"
+                : "text-[#718096] dark:text-[#A0AEC0]"
+            }`}
+          >
+            Game
           </button>
         </div>
+      </div>
 
+      {mobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-40">
+          <button
+            type="button"
+            aria-label="Close menu"
+            className="absolute inset-0 bg-[#1A202C]/40"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <div className="absolute inset-y-0 left-0 w-[min(100%,20rem)] overflow-y-auto bg-white dark:bg-[#1A202C] p-4 flex flex-col gap-3 shadow-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="text-xl font-bold text-[#7EB8D8]">Kayra</div>
+                <div className="text-xl">🌳</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(false)}
+                className="h-8 px-3 rounded-full text-xs font-bold text-[#718096] dark:text-[#A0AEC0]"
+              >
+                Close
+              </button>
+            </div>
+            <select
+              value={selectedChatId || ""}
+              onChange={(e) => setSelectedChatId(e.target.value as Id<"chats">)}
+              className="w-full bg-[#F8F9FA] dark:bg-[#2D3748] border border-[#E8F4FC] dark:border-[#4A5568] rounded-xl px-3 py-2 text-sm text-[#4A5568] dark:text-[#E2E8F0]"
+            >
+              {chats.map((chat) => (
+                <option key={chat._id} value={chat._id}>
+                  {chat.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleCreateChat}
+              disabled={isCreatingChat}
+              className="w-full bg-gradient-to-r from-[#B8E8C8] to-[#98D8B8] dark:from-[#6BB8C8] dark:to-[#5BA8B8] disabled:opacity-50 px-3 py-2 rounded-xl text-sm font-bold text-white"
+            >
+              {isCreatingChat ? "..." : "+ New"}
+            </button>
+            {selectedChatId && (
+              <button
+                type="button"
+                onClick={() => handleDeleteChat(selectedChatId)}
+                className="w-full bg-[#F0B8C4] dark:bg-[#9A8ABC] px-3 py-2 rounded-xl text-sm text-white"
+              >
+                Delete
+              </button>
+            )}
+            {selectedChat?.repoId && selectedChat.repoId !== "pending" && hasCommitted && (
+              <button
+                type="button"
+                onClick={handleDownloadProject}
+                disabled={isDownloading}
+                className="w-full bg-[#A8D4E6] dark:bg-[#7EB5D6] disabled:opacity-50 px-3 py-2 rounded-xl text-sm text-white"
+              >
+                {isDownloading ? "..." : "Save"}
+              </button>
+            )}
+            <div className="mt-2 flex items-center justify-between">
+              {mounted && <ThemeToggle theme={theme} onToggle={toggleTheme} />}
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  router.push("/settings");
+                }}
+                className="text-sm font-bold text-[#718096] dark:text-[#A0AEC0]"
+              >
+                Settings
+              </button>
+              <UserButton />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top Bar */}
+      <div className="hidden md:flex flex-shrink-0 px-4 md:px-6 py-3 md:py-2 border-b border-[#E8F4FC] dark:border-[#4A5568] bg-white/80 dark:bg-[#2D3748]/80 backdrop-blur-sm md:flex-row md:items-center justify-between gap-2 md:gap-4 shadow-sm">
         {/* Desktop: Left - Brand + Chat Controls */}
         <div className="hidden md:flex items-center gap-5 min-w-0">
           <div className="flex flex-col leading-tight flex-shrink-0">
@@ -657,30 +712,6 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
         </div>
       </div>
 
-      {/* Mobile Tab Switcher */}
-      <div className="md:hidden flex flex-shrink-0 border-b border-[#E8F4FC] dark:border-[#4A5568] bg-white dark:bg-[#2D3748]">
-        <button
-          onClick={() => setMobileView("chat")}
-          className={`flex-1 py-3 text-sm font-bold transition-all flex items-center justify-center gap-2 ${
-            mobileView === "chat"
-              ? "bg-gradient-to-r from-[#A8D4E6] to-[#88C4D6] dark:from-[#6BA8C8] dark:to-[#5B98B8] text-white"
-              : "bg-[#F8F9FA] dark:bg-[#1A202C] text-[#718096] dark:text-[#A0AEC0]"
-          }`}
-        >
-          <span>💬</span> Chat
-        </button>
-        <button
-          onClick={() => setMobileView("preview")}
-          className={`flex-1 py-3 text-sm font-bold transition-all flex items-center justify-center gap-2 ${
-            mobileView === "preview"
-              ? "bg-gradient-to-r from-[#A8D4E6] to-[#88C4D6] dark:from-[#6BA8C8] dark:to-[#5B98B8] text-white"
-              : "bg-[#F8F9FA] dark:bg-[#1A202C] text-[#718096] dark:text-[#A0AEC0]"
-          }`}
-        >
-          <span>🎮</span> Preview
-        </button>
-      </div>
-
       {/* Main Content Area */}
       <div className="flex flex-col md:flex-row flex-1 min-h-0">
         {/* Chat Panel */}
@@ -688,7 +719,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
           mobileView === "chat" ? "flex flex-1" : "hidden md:flex md:h-full"
         }`}>
           {/* Messages */}
-          <div className="flex-1 p-4 md:p-6 overflow-y-auto overflow-x-hidden space-y-4 min-h-0">
+          <div className="flex-1 px-4 pt-14 pb-4 md:p-6 overflow-y-auto overflow-x-hidden space-y-4 min-h-0">
             {selectedChatId ? (
               messages && messages.length > 0 ? (
                 messages.map((msg, idx) => {
@@ -769,7 +800,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
         <div className={`w-full md:w-1/2 md:flex-none flex flex-col overflow-hidden ${
           mobileView === "preview" ? "flex flex-1" : "hidden md:flex md:h-full"
         }`}>
-          <div className="relative flex-1 bg-gradient-to-br from-[#F0E6FA] via-[#FAFBFC] to-[#E8F4FC] dark:from-[#1A202C] dark:via-[#2D3748] dark:to-[#1A202C] p-4 md:p-6 flex items-center justify-center">
+          <div className="relative flex-1 bg-gradient-to-br from-[#F0E6FA] via-[#FAFBFC] to-[#E8F4FC] dark:from-[#1A202C] dark:via-[#2D3748] dark:to-[#1A202C] p-0 md:p-6 flex items-center justify-center">
             {shouldShowLivePreview({
               hasPreviewUrl: Boolean(preview?.previewUrl),
               startedThisVisit: previewLiveChatId === selectedChatId,
