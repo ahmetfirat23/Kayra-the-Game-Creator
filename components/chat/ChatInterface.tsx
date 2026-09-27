@@ -34,7 +34,11 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   const [showKey, setShowKey] = useState(false);
   const [savingKey, setSavingKey] = useState(false);
   const [isSending, setIsSending] = useState(false);
-  const [isPreparing, setIsPreparing] = useState(false);
+  const [preparingChatId, setPreparingChatId] = useState<Id<"chats"> | null>(null);
+  const reloadController = useRef<{ chatId: Id<"chats">; controller: AbortController } | null>(null);
+  const selectedChatIdRef = useRef(selectedChatId);
+  selectedChatIdRef.current = selectedChatId;
+  const isPreparing = selectedChatId !== null && preparingChatId === selectedChatId;
   const [toast, setToast] = useState<{ message: string; type: "error" | "success" | "info" } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     message: string;
@@ -120,11 +124,12 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   const lastMessageId = messages[messages.length - 1]?.id;
 
   const postSandbox = useCallback(
-    async (chatId: Id<"chats">, action: "ensure" | "delete" | "download" | "heartbeat" | "compile-error", viewerId?: string) => {
+    async (chatId: Id<"chats">, action: "ensure" | "delete" | "download" | "heartbeat" | "compile-error", viewerId?: string, signal?: AbortSignal) => {
       const response = await fetch("/api/sandbox", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chatId, action, viewerId }),
+        signal,
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -212,20 +217,42 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
       showToast("Kayra is still working — wait for this reply to finish.", "info");
       return;
     }
-    setIsPreparing(true);
+    const chatId = selectedChatId;
+    const controller = new AbortController();
+    reloadController.current = { chatId, controller };
+    setPreparingChatId(chatId);
     try {
-      await postSandbox(selectedChatId, "ensure");
-      setPreviewEpoch((epoch) => epoch + 1);
+      await postSandbox(chatId, "ensure", undefined, controller.signal);
+      if (reloadController.current?.controller === controller && selectedChatIdRef.current === chatId) {
+        setPreviewEpoch((epoch) => epoch + 1);
+      }
     } catch (error) {
-      showToast(
-        error instanceof Error ? error.message : "Could not reload the game.",
-        "error",
-      );
+      if (!controller.signal.aborted && selectedChatIdRef.current === chatId) {
+        showToast(
+          error instanceof Error ? error.message : "Could not reload the game.",
+          "error",
+        );
+      }
     } finally {
-      // Always unlock the composer after ensure settles; only a live AI turn keeps it busy.
-      setIsPreparing(false);
+      if (reloadController.current?.controller === controller) {
+        reloadController.current = null;
+        setPreparingChatId((current) => current === chatId ? null : current);
+      }
     }
   };
+
+  useLayoutEffect(() => {
+    if (reloadController.current && reloadController.current.chatId !== selectedChatId) {
+      const abandonedChatId = reloadController.current.chatId;
+      reloadController.current.controller.abort();
+      reloadController.current = null;
+      setPreparingChatId((current) => current === abandonedChatId ? null : current);
+    }
+    return () => {
+      reloadController.current?.controller.abort();
+      reloadController.current = null;
+    };
+  }, [selectedChatId]);
 
   useEffect(() => {
     if (!selectedChatId) return;
@@ -495,7 +522,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
         }
       }
 
-      setIsPreparing(true);
+      setPreparingChatId(chatId);
       try {
         await postSandbox(chatId, "ensure");
       } catch (error) {
@@ -504,11 +531,11 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
           error instanceof Error ? error.message : "Failed to start the game environment.",
           "error",
         );
-        setIsPreparing(false);
+        setPreparingChatId((current) => current === chatId ? null : current);
         setIsSending(false);
         return;
       } finally {
-        setIsPreparing(false);
+        setPreparingChatId((current) => current === chatId ? null : current);
       }
       
       setInput("");
