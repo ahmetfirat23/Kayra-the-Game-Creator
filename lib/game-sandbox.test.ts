@@ -116,7 +116,8 @@ describe("ensureGameSandbox", () => {
     const install = shells.join("\n");
     assert.match(install, /npm install three @react-three\/fiber @react-three\/drei @react-three\/rapier zustand @use-gesture\/react/);
     assert.match(install, /npx expo install expo-gl expo-av expo-haptics/);
-    assert.match(install, /pkill -f 'expo start'/);
+    assert.match(install, /fuser -k 19006\/tcp/);
+    assert.match(install, /pkill -f '\[e\]xpo'/);
   });
 
   it("writes a holding page over the Expo starter before Expo serves", async () => {

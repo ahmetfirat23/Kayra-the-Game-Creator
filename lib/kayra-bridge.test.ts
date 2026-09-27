@@ -151,11 +151,12 @@ describe("kayra-bridge refused commands", () => {
     assert.equal(commitRestartsPreview({}), false);
     const script = expoRestartScript();
     assert.match(script, /max-old-space-size=1536/);
-    assert.match(script, /pkill -f 'expo start'/);
+    assert.match(script, /fuser -k 19006\/tcp/);
+    assert.match(script, /pkill -f '\[e\]xpo'/);
     assert.match(script, /--clear/);
     assert.match(script, /rm -rf \/template\/\.expo/);
     assert.match(script, /node_modules\/\.cache/);
-    assert.equal(BRIDGE_HEALTH, "ok 6");
+    assert.equal(BRIDGE_HEALTH, "ok 7");
     assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
     assert.deepEqual(expoRestartOrder({}), []);
   });

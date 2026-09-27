@@ -270,7 +270,10 @@ async function writeHoldingPage(sandbox: SandboxVm): Promise<void> {
 async function stopExpo(sandbox: SandboxVm): Promise<void> {
   await sandbox.runCommand(
     "bash",
-    ["-lc", "pkill -f 'expo start' || true; pkill -f '[m]etro' || true"],
+    [
+      "-lc",
+      "if command -v fuser >/dev/null 2>&1; then fuser -k 19006/tcp || true; fi; pkill -f '[e]xpo' || true; pkill -f '[m]etro' || true",
+    ],
     { timeoutMs: 15_000 },
   );
   await sandbox.runCommand(

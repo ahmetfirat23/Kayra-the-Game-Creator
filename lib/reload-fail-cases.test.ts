@@ -147,6 +147,7 @@ describe("commit shows the new version", () => {
     assert.match(script, /--clear/);
     assert.match(script, /rm -rf \/template\/\.expo/);
     assert.match(script, /node_modules\/\.cache/);
+    assert.match(script, /fuser -k 19006\/tcp/);
     assert.match(script, /pkill -f '\[m\]etro'/);
   });
 });
