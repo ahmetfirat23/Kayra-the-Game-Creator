@@ -35,16 +35,17 @@ Your goal is to build games that are **"Easy to learn, difficult to master"** wi
    Do not output code snippets in the chat. Write all code directly to the file system.
 
 2. **Atomic Workflow**  
-   Create or update files, then immediately run \`commitAndPush\`.  
-   Do not batch too many changes without verification.
+   Write the game files with \`writeFiles\`, then run \`commitAndPush\` once.  
+   The preview is already running. Do not start it again.
 
 3. **Efficiency**  
    Plan before executing.  
    Do not read files you just modified.  
-   Only read what is strictly necessary.
+   Only read what is strictly necessary.  
+   Do not run \`npm run dev\`, \`npm run lint\`, \`expo start\`, or \`reset-project\`.
 
 4. **Error Handling**  
-   If a build or lint error occurs during a commit, fix it immediately before returning control to the user.
+   If a file write fails, fix that file. Do not reinstall packages that are already present.
 
 5. **User Communication**
     Keep your design documents and explanations concise and to the point.
@@ -128,10 +129,10 @@ Use gradients, soft grids, or distant fog to create depth.
     When reading multiple files, always use \`readFiles\` with an array of paths in a single call rather than calling it multiple times.
 
 4. **Write & Commit**
-    Your main objective is to write code files. Write complete, bug-free, working files. When writing multiple files, always use \`writeFiles\` with an array of file objects in a single call rather than calling it multiple times. After each meaningful batch of changes, run \`commitAndPush\`. Your code should be compact, focusing on core functionality first.
+    Your main objective is to write code files. Write complete, working files. When writing multiple files, always use \`writeFiles\` with an array of file objects in a single call rather than calling it multiple times. Run \`commitAndPush\` once after the game files are written. Your code should be compact, focusing on core functionality first.
 
 5. **Commit**  
-   Run \`commitAndPush\` after every meaningful file change or batch of changes.
+   Run \`commitAndPush\` once, after the game files are written. Do not commit after every small edit.
 
 6. **Review**  
    Briefly explain what you built and how it works.
@@ -180,6 +181,11 @@ Then write code immediately.
 
 ## React-Three-Fiber Constraints
 
+- **Imports**  
+  Import \`Canvas\`, \`useFrame\`, and \`useThree\` from \`@react-three/fiber\`.  
+  Never import \`@react-three/fiber/native\`. The preview is Expo web, and that native entry does not resolve.  
+  \`three\`, \`@react-three/fiber\`, \`@react-three/drei\`, \`@react-three/rapier\`, \`zustand\`, \`@use-gesture/react\`, \`expo-gl\`, \`expo-av\`, and \`expo-haptics\` are already installed.
+
 - **Canvas Separation**  
   The \`<Canvas>\` component must live in \`index.tsx\`  
   Game logic (loops, physics) must live in a child component (e.g., \`<GameScene />\`)
@@ -200,8 +206,8 @@ Then write code immediately.
 - \`writeFiles\` — create or overwrite files. ALWAYS pass an array of file objects to write multiple files in a single call, never make separate calls for each file.
 - \`editFiles\` — make precise line edits. ALWAYS pass an array of file edit objects to edit multiple files in a single call, never make separate calls for each file.
 - \`commitAndPush\` — save changes
-- \`npmInstall\` — install dependencies
-- \`exec\` — run shell commands
+- \`npmInstall\` — add one new package by name. three, @react-three/fiber, @react-three/drei, @react-three/rapier, zustand, @use-gesture/react, expo-gl, expo-av, and expo-haptics are already installed. Calling this with no package name does nothing.
+- \`exec\` — run a shell command that reads or edits files. Do not use it to start Expo, run lint, or reset the project.
 
 ---
 
@@ -209,7 +215,7 @@ Then write code immediately.
 
 - **"Module not found"**
   - Use \`listDirectory\` to verify the path
-  - If a package is missing update package.json and run \`npmInstall\`
+  - If a package is missing, pass that package name to \`npmInstall\`. Do not install the packages that are already in the template.
   - Do not ask the user
 
 - **"File not found"**
@@ -543,111 +549,24 @@ export function createFreestyleTools(mcpClient: any) {
             },
         },
         commitAndPush: {
-            description: "Commit all changes to git. Always use this after completing your work.",
+            description: "Save the game files with one git commit. Run this once after the files are written. It does not start a build.",
             inputSchema: z.object({ }),
             execute: async () => {
                 try {
                     getToolCallTracker().recordCommit();
-                    
+
                     const commitResult = await mcpClient.callTool({
                         name: "git_commit_and_push",
                         arguments: { message: "committed" },
                     });
-                    
-                    let commitOutput = `Committed changes successfully.`;
+
                     if (Array.isArray(commitResult.content) && commitResult.content.length > 0) {
                         const firstContent = commitResult.content[0];
-                        if (firstContent && 'text' in firstContent) {
-                            commitOutput = firstContent.text || commitOutput;
+                        if (firstContent && "text" in firstContent && firstContent.text) {
+                            return firstContent.text;
                         }
                     }
-
-                    try {
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                        
-                        const errors: string[] = [];
-                        
-                        // Check 1: TypeScript errors
-                        const tscResult = await mcpClient.callTool({
-                            name: "exec",
-                            arguments: { command: "cd /template && (npx tsc --noEmit 2>&1 || echo 'TypeScript check completed')" },
-                        });
-                        
-                        let tscOutput = "";
-                        if (Array.isArray(tscResult.content) && tscResult.content.length > 0) {
-                            const firstContent = tscResult.content[0];
-                            if (firstContent && 'text' in firstContent) {
-                                tscOutput = firstContent.text || "";
-                            }
-                        }
-                        
-                        // If there are TypeScript errors, collect them
-                        if (tscOutput && 
-                            tscOutput.trim() && 
-                            !tscOutput.includes("Found 0 errors") &&
-                            (tscOutput.includes("error TS") || tscOutput.includes("error:"))) {
-                            const errorLines = tscOutput.split('\n')
-                                .filter(line => line.includes('error') || line.trim().startsWith('/'))
-                                .slice(0, 20)
-                                .join('\n');
-                            if (errorLines.trim()) {
-                                errors.push(`TYPESCRIPT ERRORS:\n${errorLines}`);
-                            }
-                        }
-                        
-                        // Check 2: Babel/JSX syntax errors using npx babel
-                        // Configure Babel with module-resolver to handle path aliases (@/...)
-                        const babelResult = await mcpClient.callTool({
-                            name: "exec",
-                            arguments: { 
-                                command: "cd /template && find . -name '*.tsx' -o -name '*.ts' | grep -v node_modules | head -20 | xargs -I {} sh -c 'npx babel {} --presets=@babel/preset-typescript,@babel/preset-react --plugins=[[\"module-resolver\",{\"alias\":{\"@\":\"./\"}}]] -o /dev/null 2>&1 || echo \"BABEL_ERROR_IN: {}\"' 2>&1 | grep -E '(SyntaxError|Error:|BABEL_ERROR_IN)' | grep -v 'Cannot find module' | head -30" 
-                            },
-                        });
-                        
-                        let babelOutput = "";
-                        if (Array.isArray(babelResult.content) && babelResult.content.length > 0) {
-                            const firstContent = babelResult.content[0];
-                            if (firstContent && 'text' in firstContent) {
-                                babelOutput = firstContent.text || "";
-                            }
-                        }
-                        
-                        if (babelOutput && babelOutput.trim() && 
-                            (babelOutput.includes("SyntaxError") || babelOutput.includes("Unexpected token"))) {
-                            errors.push(`JSX/SYNTAX ERRORS:\n${babelOutput.trim()}`);
-                        }
-                        
-                        // Check 3: Try to catch Metro bundler errors by checking recent logs
-                        const metroResult = await mcpClient.callTool({
-                            name: "exec",
-                            arguments: { 
-                                command: "cd /template && (cat .expo/logs/*.log 2>/dev/null | tail -50 | grep -iE '(error|failed|SyntaxError|unexpected)' | head -20) || echo ''" 
-                            },
-                        });
-                        
-                        let metroOutput = "";
-                        if (Array.isArray(metroResult.content) && metroResult.content.length > 0) {
-                            const firstContent = metroResult.content[0];
-                            if (firstContent && 'text' in firstContent) {
-                                metroOutput = firstContent.text || "";
-                            }
-                        }
-                        
-                        if (metroOutput && metroOutput.trim() && 
-                            (metroOutput.includes("SyntaxError") || metroOutput.includes("Unexpected token"))) {
-                            errors.push(`METRO/BUNDLER ERRORS:\n${metroOutput.trim()}`);
-                        }
-                        
-                        // If any errors were found, report them
-                        if (errors.length > 0) {
-                            return `${commitOutput}\n\nBUILD ERRORS DETECTED:\n\n${errors.join('\n\n')}\n\nCRITICAL: You must fix these errors immediately. Identify the issues (look for syntax errors like missing commas, brackets, or unexpected tokens), and fix them using writeFiles or editFiles, then commit again.`;
-                        }
-                        
-                    } catch (error) {
-                        // If error checking fails, still return the commit success
-                        console.error("Error checking for build errors:", error);
-                    }                 
-                    return commitOutput;
+                    return "Committed changes successfully.";
                 } catch (error) {
                     console.error("commitAndPush error:", error);
                     return `Error committing: ${error instanceof Error ? error.message : "Unknown error"}`;
@@ -878,13 +797,15 @@ export function createFreestyleTools(mcpClient: any) {
             },
         },
         npmInstall: {
-            description: "Install npm dependencies. Run this after modifying package.json or when packages need to be installed/updated.",
-            inputSchema: z.object({}),
-            execute: async () => {
+            description: "Add one new npm package by name. The template and 3D libraries are already installed, so do not call this for three, react-three, expo-gl, expo-av, or expo-haptics.",
+            inputSchema: z.object({
+                packages: z.array(z.string()).optional().describe("Package names to add. Omit this and nothing is installed."),
+            }),
+            execute: async ({ packages }: { packages?: string[] }) => {
                 try {
                     const result = await mcpClient.callTool({
                         name: "npm_install",
-                        arguments: {},
+                        arguments: { packages: packages ?? [] },
                     });
                     
                     if (Array.isArray(result.content) && result.content.length > 0) {
@@ -901,30 +822,14 @@ export function createFreestyleTools(mcpClient: any) {
             },
         },
         npmRunLint: {
-            description: "Run the linter (eslint) to check for code quality issues",
+            description: "Unused. The game preview does not run a linter. Do not call this.",
             inputSchema: z.object({}),
             execute: async () => {
-                try {
-                    const result = await mcpClient.callTool({
-                        name: "npm_run_lint",
-                        arguments: {},
-                    });
-                    
-                    if (Array.isArray(result.content) && result.content.length > 0) {
-                        const firstContent = result.content[0];
-                        if (firstContent && 'text' in firstContent) {
-                            return firstContent.text || `Linting completed`;
-                        }
-                    }
-                    return `Linting completed`;
-                } catch (error) {
-                    console.error("npmRunLint error:", error);
-                    return `Error running linter: ${error instanceof Error ? error.message : "Unknown error"}`;
-                }
+                return "Lint is not part of the game preview. Do not run it.";
             },
         },
         exec: {
-            description: "Execute a shell command in the project directory. Use other specialized tools when available (npmInstall, npmRunLint, etc.)",
+            description: "Run a shell command that reads or edits files. Do not use this to start Expo, run lint, reset the project, or reinstall packages that are already present.",
             inputSchema: z.object({
                 command: z.string().describe("The command to execute"),
                 cwd: z.string().optional().describe("Optional working directory for the command"),

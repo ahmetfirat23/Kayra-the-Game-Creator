@@ -3,7 +3,12 @@ import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { handleHttpRequest, handleTool } from "./kayra-bridge.mjs";
+import {
+  handleHttpRequest,
+  handleTool,
+  previewWaitingPage,
+  refusedShell,
+} from "./kayra-bridge.mjs";
 
 function mockRes() {
   const state: {
@@ -81,5 +86,35 @@ describe("kayra-bridge edit_file", () => {
 
     const after = await readFile(filePath, "utf8");
     assert.equal(after, "const x = 1;\n");
+  });
+});
+
+describe("kayra-bridge refused commands", () => {
+  it("refuses reset-project, lint, and a second dev server", async () => {
+    for (const command of [
+      "npm run reset-project",
+      "npm run lint",
+      "npx expo lint",
+      "npm run dev",
+      "npx expo start --web --port 3000",
+    ]) {
+      const result = await handleTool("exec", { command });
+      assert.equal(refusedShell(command) !== null, true);
+      assert.match(result.content[0]?.text ?? "", /do not/i);
+    }
+  });
+
+  it("does not reinstall when npm_install has no safe package names", async () => {
+    const empty = await handleTool("npm_install", {});
+    const injected = await handleTool("npm_install", {
+      packages: ["three; rm -rf /"],
+    });
+    assert.match(empty.content[0]?.text ?? "", /already installed/i);
+    assert.match(injected.content[0]?.text ?? "", /already installed/i);
+  });
+
+  it("shows a page that reloads while Expo is starting", () => {
+    assert.match(previewWaitingPage(), /refresh/);
+    assert.match(previewWaitingPage(), /Starting your game/);
   });
 });

@@ -69,6 +69,34 @@ function createFakeClient(options: {
 }
 
 describe("ensureGameSandbox", () => {
+  it("installs the 3D libraries when they are not in the template", async () => {
+    const shells: string[] = [];
+    const fake = createFakeClient({
+      getOrCreate: async () =>
+        createFakeVm({
+          runCommand: async (command, args, opts) => {
+            const shell = Array.isArray(args) ? args.join(" ") : "";
+            if (typeof command === "string") shells.push(shell);
+            if (shell.includes("npm install three")) {
+              assert.ok((opts?.timeoutMs ?? 0) >= 270_000);
+            }
+            const missingLibs = shell.includes("node_modules/three");
+            return {
+              exitCode: missingLibs ? 1 : 0,
+              stdout: async () => "",
+              stderr: async () => "",
+            };
+          },
+        }),
+    });
+
+    await ensureGameSandbox("chat-abc", { client: fake.client });
+
+    const install = shells.join("\n");
+    assert.match(install, /npm install three @react-three\/fiber @react-three\/drei @react-three\/rapier zustand @use-gesture\/react/);
+    assert.match(install, /npx expo install expo-gl expo-av expo-haptics/);
+  });
+
   it("calls getOrCreate with persistent false, 1 vCPU, and a 10-minute timeout", async () => {
     const fake = createFakeClient();
 

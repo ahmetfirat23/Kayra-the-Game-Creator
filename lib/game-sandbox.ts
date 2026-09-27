@@ -91,7 +91,10 @@ async function commandOk(sandbox: SandboxVm, shell: string): Promise<boolean> {
 }
 
 async function installTemplate(sandbox: SandboxVm): Promise<void> {
-  const installed = await commandOk(sandbox, "test -d /template/node_modules");
+  const installed = await commandOk(
+    sandbox,
+    "test -d /template/node_modules/three && test -d /template/node_modules/expo-gl",
+  );
   if (installed) return;
 
   const prepare = await sandbox.runCommand(
@@ -102,10 +105,11 @@ async function installTemplate(sandbox: SandboxVm): Promise<void> {
         'if [ ! -w /template ] 2>/dev/null; then sudo mkdir -p /template /opt && sudo chown -R "$(id -un)" /template /opt; fi',
         "mkdir -p /template /opt",
         `if [ ! -f /template/package.json ]; then git clone --depth 1 ${TEMPLATE_REPO} /template; fi`,
-        "cd /template && npm install",
+        "cd /template && npm install three @react-three/fiber @react-three/drei @react-three/rapier zustand @use-gesture/react",
+        "cd /template && CI=1 npx expo install expo-gl expo-av expo-haptics",
       ].join(" && "),
     ],
-    { timeoutMs: 240_000 },
+    { timeoutMs: 270_000 },
   );
 
   if (prepare.exitCode !== 0) {
