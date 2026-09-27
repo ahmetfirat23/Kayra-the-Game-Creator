@@ -6,6 +6,7 @@ import {
   deleteGameSandbox,
   downloadGameArchive,
   ensureGameSandbox,
+  expoStartShell,
   isSandboxGoneError,
   type SandboxClient,
   type SandboxVm,
@@ -281,6 +282,12 @@ describe("ensureGameSandbox", () => {
     assert.match(text, /pkill -f 'node \/opt\/kayra-bridge\.mjs'/);
     assert.match(text, /KAYRA_RESTART_EXPO/);
     assert.match(text, /max-old-space-size=1536/);
+  });
+
+  it("serializes Expo startup on the fixed preview port", () => {
+    const shell = expoStartShell();
+    assert.match(shell, /flock -n \/tmp\/kayra-expo\.lock/);
+    assert.match(shell, /--port 19006/);
   });
 
   it("keeps the sandbox when the timeout cannot be extended further", async () => {

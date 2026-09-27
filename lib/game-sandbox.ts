@@ -105,8 +105,14 @@ async function commandOutput(sandbox: SandboxVm, shell: string): Promise<string>
   return (await result.stdout()).trim();
 }
 
-function expoStartShell(): string {
-  return "cd /template && CI=1 EXPO_NO_TELEMETRY=1 NODE_OPTIONS=--max-old-space-size=1536 npx expo start --clear --web --port 19006 --host lan";
+export function expoStartShell(): string {
+  const expo =
+    "env CI=1 EXPO_NO_TELEMETRY=1 NODE_OPTIONS=--max-old-space-size=1536 npx expo start --clear --web --port 19006 --host lan";
+  return `cd /template
+if command -v flock >/dev/null 2>&1; then
+  exec flock -n /tmp/kayra-expo.lock ${expo}
+fi
+exec ${expo}`;
 }
 
 function shellQuote(value: string): string {
@@ -272,7 +278,7 @@ async function stopExpo(sandbox: SandboxVm): Promise<void> {
     "bash",
     [
       "-lc",
-      "if command -v fuser >/dev/null 2>&1; then fuser -k 19006/tcp || true; fi; pkill -f '[e]xpo' || true; pkill -f '[m]etro' || true",
+      "if command -v fuser >/dev/null 2>&1; then fuser -k 19006/tcp || true; fi; pkill -f '[e]xpo' || true; pkill -f '[m]etro' || true; pkill -f '[c]li.*start.*19006' || true",
     ],
     { timeoutMs: 15_000 },
   );
