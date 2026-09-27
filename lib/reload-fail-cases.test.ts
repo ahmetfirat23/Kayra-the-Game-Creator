@@ -132,6 +132,17 @@ describe("phone looking at the PC preview", () => {
   });
 });
 
+it("keeps a live preview visible while ensure is still pending", () => {
+  assert.equal(previewPane({
+    hasChat: true,
+    hasMessages: true,
+    hasPreviewUrl: true,
+    live: true,
+    preparing: true,
+    previewKnown: true,
+  }), "game");
+});
+
 describe("commit shows the new version", () => {
   it("changes the iframe address when the reply finishes", () => {
     const epoch = nextPreviewEpoch(true, false, 2);

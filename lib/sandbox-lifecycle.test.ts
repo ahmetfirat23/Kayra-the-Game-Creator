@@ -107,14 +107,14 @@ describe("shouldShowLivePreview", () => {
     );
   });
 
-  it("keeps the starting screen up while the machine is still starting", () => {
+  it("shows a live machine while a slow ensure request is still finishing", () => {
     assert.equal(
       shouldShowLivePreview({
         hasPreviewUrl: true,
         live: true,
         preparing: true,
       }),
-      false,
+      true,
     );
   });
 });

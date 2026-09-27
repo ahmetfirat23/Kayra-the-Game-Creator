@@ -14,7 +14,7 @@ Game files live under `/template` inside the sandbox. Created with `persistent: 
 
 ## Shown from
 
-`ChatInterface` queries `api.chat.getPreview`. `previewForClient` returns `{ previewUrl, live }`. `live` is true while `updatedAt` is inside the last 60 seconds. `shouldShowLivePreview` mounts that URL on every screen looking at the chat, including a phone that did not start the machine. A stale URL shows “This preview is stopped.” and “Reload the game”. While `isPreparing` is true, the pane shows the starting screen instead of the iframe.
+`ChatInterface` queries `api.chat.getPreview`. `previewForClient` returns `{ previewUrl, live }`. `live` is true while `updatedAt` is inside the last 60 seconds. `shouldShowLivePreview` mounts that URL on every screen looking at the chat, including a phone that did not start the machine. A stale URL shows “This preview is stopped.” and “Reload the game”. The app shows its starting screen only until a live URL exists; an already running VM stays visible while an ensure request finishes.
 
 Reload calls `ensure`. `ensureGameSandbox` replays the last successful commit from the thread (`finishedGameFromUiMessages`) onto the VM before Expo starts. A fresh template, or a disk still showing the holding sentence, is replaced by those files. A machine that already has the game is left as it is.
 
@@ -35,7 +35,7 @@ Reload calls `ensure`. `ensureGameSandbox` replays the last successful commit fr
 | Action | Writes / returns |
 | --- | --- |
 | `ensure` (default) | Reuses or creates the named VM with `ensureGameSandbox`, then `registerSandbox`; returns `{ previewUrl }`. Template install cap 200s |
-| `heartbeat` | `touchSandbox` before VM/network checks; extend timeout 60s. If VM gone (`410` / `SANDBOX_STOPPED`), `clearSandbox` so the iframe is not left on a dead address |
+| `heartbeat` | `touchSandbox` before VM/network checks; extend timeout 60s. Older tabs without a viewer ID use a shared per-account lease. If VM gone (`410` / `SANDBOX_STOPPED`), `clearSandbox` so the iframe is not left on a dead address |
 | `release` | Remove this tab's viewer lease. If it was the last viewer, schedule cleanup after 10s |
 | `delete` | Delete VM + `clearSandbox` immediately |
 | `download` | Base64 tar of `/template` (excludes `node_modules`, `.git`, `.expo`, `.cache`); does not create a sandbox |

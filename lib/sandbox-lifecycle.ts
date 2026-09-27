@@ -54,14 +54,14 @@ export function shouldRecoverPreview(
 /**
  * The iframe shows the machine this chat is already running, including one
  * started by another screen. A stored URL with a stale heartbeat is stopped.
- * While Reload is starting a machine, keep the starting screen up.
+ * Once the VM is live, show its iframe even if an ensure request is still
+ * finishing; the bridge can display its own starting page until Expo is ready.
  */
 export function shouldShowLivePreview(input: {
   hasPreviewUrl: boolean;
   live: boolean;
   preparing: boolean;
 }): boolean {
-  if (input.preparing) return false;
   if (!input.live) return false;
   return input.hasPreviewUrl;
 }

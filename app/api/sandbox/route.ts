@@ -20,6 +20,7 @@ import {
   shouldRecoverPreview,
 } from "../../../lib/sandbox-lifecycle";
 import { missingViewerRelease, rejectsNewSandboxField } from "../../../lib/sandbox-compat";
+import { requestViewerId } from "../../../lib/sandbox-viewers";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -84,7 +85,7 @@ async function readBody(req: Request): Promise<SandboxRequestBody> {
 }
 
 async function authenticatedConvexClient(): Promise<
-  | { ok: true; convex: ConvexHttpClient }
+  | { ok: true; convex: ConvexHttpClient; userId: string }
   | { ok: false; response: NextResponse }
 > {
   const { userId, getToken } = await auth();
@@ -122,7 +123,7 @@ async function authenticatedConvexClient(): Promise<
 
   const convex = new ConvexHttpClient(convexUrl);
   convex.setAuth(token);
-  return { ok: true, convex };
+  return { ok: true, convex, userId };
 }
 
 async function previewProcessHealthy(access: {
@@ -177,7 +178,7 @@ export async function POST(req: Request) {
     const authResult = await authenticatedConvexClient();
     if (!authResult.ok) return authResult.response;
 
-    const { convex } = authResult;
+    const { convex, userId } = authResult;
     const body = await readBody(req);
     const chatId = body.chatId as Id<"chats"> | undefined;
     if (!chatId) {
@@ -187,15 +188,16 @@ export async function POST(req: Request) {
     const action: SandboxAction = body.action ?? "ensure";
     const client = createVercelSandboxClient();
 
-    if (action === "heartbeat" || action === "release") {
-      if (!body.viewerId || body.viewerId.length > 100) {
-        return NextResponse.json({ error: "viewerId is required" }, { status: 400 });
-      }
+    const viewerId = requestViewerId(body.viewerId, userId);
+    if (action === "heartbeat" && !viewerId) {
+      return NextResponse.json({ error: "Invalid viewerId" }, { status: 400 });
     }
 
     if (action === "release") {
+      if (!body.viewerId) return NextResponse.json({ ok: true });
+      if (!viewerId) return NextResponse.json({ error: "Invalid viewerId" }, { status: 400 });
       try {
-        await convex.mutation(api.chat.releaseSandboxViewer, { chatId, viewerId: body.viewerId! });
+        await convex.mutation(api.chat.releaseSandboxViewer, { chatId, viewerId });
       } catch (error) {
         if (!missingViewerRelease(error)) throw error;
       }
@@ -237,7 +239,7 @@ export async function POST(req: Request) {
       }
 
       // Touch before slow VM/network checks so other tabs see a live preview.
-      await touchSandboxCompat(convex, { chatId, viewerId: body.viewerId!, appOrigin: new URL(req.url).origin });
+      await touchSandboxCompat(convex, { chatId, viewerId: viewerId!, appOrigin: new URL(req.url).origin });
       const sandbox = await client.get({ name: sandboxName(chatId) });
       if (!sandbox) {
         await convex.mutation(api.chat.clearSandbox, { chatId });

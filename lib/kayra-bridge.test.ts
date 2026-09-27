@@ -168,6 +168,9 @@ describe("kayra-bridge refused commands", () => {
     const page = previewWaitingPage();
     assert.doesNotMatch(page, /http-equiv="refresh"/);
     assert.match(page, /fetch\(location\.href/);
+    assert.match(page, /if \(checking\) return/);
+    assert.match(page, /AbortSignal\.timeout\(4000\)/);
+    assert.match(page, /setTimeout\(\(\) => location\.reload\(\), 45000\)/);
     assert.match(page, /data-kayra-preview-waiting/);
     assert.match(page, /Starting your game/);
     assert.match(page, /#F0E6FA/);
@@ -199,7 +202,7 @@ describe("kayra-bridge refused commands", () => {
     assert.doesNotMatch(RESTART_SCRIPT_PATH, /expo/i);
     assert.match(script, /kayra-restart-preview\.log/);
     assert.match(script, /flock -n \/tmp\/kayra-expo\.lock/);
-    assert.equal(BRIDGE_HEALTH, "ok 14");
+    assert.equal(BRIDGE_HEALTH, "ok 15");
     assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
     assert.deepEqual(expoRestartOrder({}), []);
   });
