@@ -133,9 +133,11 @@ describe("kayra-bridge refused commands", () => {
     assert.match(injected.content[0]?.text ?? "", /already installed/i);
   });
 
-  it("shows a page that reloads while Expo is starting", () => {
+  it("polls quietly while Expo is starting instead of refreshing the page", () => {
     const page = previewWaitingPage();
-    assert.match(page, /refresh/);
+    assert.doesNotMatch(page, /http-equiv="refresh"/);
+    assert.match(page, /fetch\(location\.href/);
+    assert.match(page, /data-kayra-preview-waiting/);
     assert.match(page, /Starting your game/);
     assert.match(page, /#F0E6FA/);
     assert.match(page, /#E8F4FC/);
@@ -164,7 +166,7 @@ describe("kayra-bridge refused commands", () => {
     assert.match(script, /node_modules\/\.cache/);
     assert.doesNotMatch(RESTART_SCRIPT_PATH, /expo/i);
     assert.match(script, /kayra-restart-preview\.log/);
-    assert.equal(BRIDGE_HEALTH, "ok 10");
+    assert.equal(BRIDGE_HEALTH, "ok 11");
     assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
     assert.deepEqual(expoRestartOrder({}), []);
   });

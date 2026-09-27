@@ -8,6 +8,7 @@ import {
   sandboxToStopOnSwitch,
   shouldDeleteSession,
   shouldEnsureSandboxOnReload,
+  shouldRecoverPreview,
   shouldRecreateStaleSandbox,
 } from "./sandbox-lifecycle.ts";
 
@@ -105,6 +106,17 @@ describe("shouldEnsureSandboxOnReload", () => {
 
   it("allows ensure when no AI turn is in progress", () => {
     assert.equal(shouldEnsureSandboxOnReload(false), true);
+  });
+});
+
+describe("shouldRecoverPreview", () => {
+  it("recovers an idle sandbox whose Expo process is down", () => {
+    assert.equal(shouldRecoverPreview(false, false), true);
+  });
+
+  it("does not interrupt an AI turn or restart a healthy preview", () => {
+    assert.equal(shouldRecoverPreview(true, false), false);
+    assert.equal(shouldRecoverPreview(false, true), false);
   });
 });
 

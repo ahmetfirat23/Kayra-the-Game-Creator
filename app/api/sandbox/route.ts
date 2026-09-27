@@ -17,6 +17,7 @@ import {
 } from "../../../lib/game-sandbox";
 import {
   sandboxName,
+  shouldRecoverPreview,
   shouldRecreateStaleSandbox,
 } from "../../../lib/sandbox-lifecycle";
 
@@ -125,6 +126,23 @@ async function authenticatedConvexClient(): Promise<
   return { ok: true, convex };
 }
 
+async function previewProcessHealthy(access: {
+  previewUrl: string;
+  token: string;
+}): Promise<boolean> {
+  try {
+    const origin = access.previewUrl.replace(/\/$/, "");
+    const response = await fetch(`${origin}/__kayra/preview-health`, {
+      headers: { Authorization: `Bearer ${access.token}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(5_000),
+    });
+    return response.ok && (await response.text()).trim() === "ready";
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const authResult = await authenticatedConvexClient();
@@ -193,6 +211,26 @@ export async function POST(req: Request) {
         await convex.mutation(api.chat.clearSandbox, { chatId });
         return NextResponse.json({ ok: true, deleted: true });
       }
+
+      const chat = await convex.query(api.chat.getChat, { chatId });
+      const previewHealthy =
+        Boolean(chat?.isAiTurn) || (await previewProcessHealthy(access));
+      if (shouldRecoverPreview(Boolean(chat?.isAiTurn), previewHealthy)) {
+        const game = await committedGame(convex, chat?.threadId);
+        const ensured = await ensureGameSandbox(chatId, {
+          client,
+          existingToken: access.token,
+          game,
+        });
+        await convex.mutation(api.chat.registerSandbox, {
+          chatId,
+          previewUrl: ensured.previewUrl,
+          execUrl: ensured.execUrl,
+          token: ensured.token,
+        });
+        return NextResponse.json({ ok: true, recovered: true });
+      }
+
       await convex.mutation(api.chat.touchSandbox, { chatId });
       try {
         await extendSandboxTimeout(sandbox, 60_000);

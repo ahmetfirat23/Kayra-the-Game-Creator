@@ -72,6 +72,14 @@ export function shouldEnsureSandboxOnReload(isAiTurn: boolean): boolean {
   return !isAiTurn;
 }
 
+/** Recover a dead preview only when doing so cannot interrupt an agent tool call. */
+export function shouldRecoverPreview(
+  isAiTurn: boolean,
+  previewHealthy: boolean,
+): boolean {
+  return !isAiTurn && !previewHealthy;
+}
+
 /**
  * The iframe shows the machine this chat is already running, including one
  * started by another screen. A stored URL with a stale heartbeat is stopped.
