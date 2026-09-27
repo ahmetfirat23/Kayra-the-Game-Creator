@@ -96,6 +96,22 @@ function commitSucceeded(part: ToolPart): boolean {
   return !/^Error committing/i.test(outputText(part.output));
 }
 
+/** Number of successful commits currently visible in the UI message history. */
+export function successfulCommitCountFromUiMessages(
+  messages: Array<{ parts?: unknown }>,
+): number {
+  let count = 0;
+  for (const message of messages) {
+    if (!Array.isArray(message.parts)) continue;
+    for (const part of message.parts) {
+      if (part && typeof part === "object" && commitSucceeded(part as ToolPart)) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}
+
 function failedWritePaths(output: unknown): Set<string> {
   const failed = new Set<string>();
   const record = asRecord(unwrapOutput(output));

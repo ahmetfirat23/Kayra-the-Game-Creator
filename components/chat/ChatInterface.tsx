@@ -8,9 +8,9 @@ import { UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { CONFIG } from "../../convex/config";
 import { compileFixPrompt, isHiddenCompileFix } from "../../lib/compile-error";
+import { successfulCommitCountFromUiMessages } from "../../lib/finished-game";
 import { sandboxActionForPageEvent } from "../../lib/sandbox-page";
 import {
-  nextPreviewEpoch,
   previewFrameSrc,
   previewPane,
   sandboxToStopOnSwitch,
@@ -81,21 +81,31 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   const isAiTurn = selectedChat?.isAiTurn || false;
   const isCurrentChatProcessing = isAiTurn || isSending;
   const [previewEpoch, setPreviewEpoch] = useState(0);
-  const wasAiTurn = useRef(false);
+
+  const successfulCommitCount = successfulCommitCountFromUiMessages(messages);
+  const observedCommits = useRef<{ chatId: Id<"chats"> | null; count: number }>({
+    chatId: null,
+    count: 0,
+  });
 
   useEffect(() => {
-    setPreviewEpoch((epoch) => nextPreviewEpoch(wasAiTurn.current, isAiTurn, epoch));
-    wasAiTurn.current = isAiTurn;
-  }, [isAiTurn]);
-  
-  type MessagePart = { type?: string; [key: string]: unknown };
-  const hasCommitted = messages.some((msg) => 
-    (msg.parts as MessagePart[] | undefined)?.some((part) => {
-      if (!part.type?.startsWith('tool-')) return false;
-      const toolName = part.type.replace('tool-', '');
-      return toolName.includes('commitAndPush');
-    })
-  );
+    if (!selectedChatId || messagesData === undefined) return;
+
+    if (observedCommits.current.chatId !== selectedChatId) {
+      observedCommits.current = {
+        chatId: selectedChatId,
+        count: successfulCommitCount,
+      };
+      return;
+    }
+
+    if (successfulCommitCount > observedCommits.current.count) {
+      setPreviewEpoch((epoch) => epoch + 1);
+    }
+    observedCommits.current.count = successfulCommitCount;
+  }, [selectedChatId, messagesData, successfulCommitCount]);
+
+  const hasCommitted = successfulCommitCount > 0;
   
   const sendMessage = useMutation(api.chat.sendMessage);
   const reportedCompileErrors = useRef(new Set<string>());

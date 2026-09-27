@@ -5,6 +5,7 @@ import {
   finishedGameFromUiMessages,
   includesGameScreen,
   safeTemplatePath,
+  successfulCommitCountFromUiMessages,
 } from "./finished-game.ts";
 
 const SCREEN = "/template/app/(tabs)/index.tsx";
@@ -162,6 +163,40 @@ describe("finishedGameFromUiMessages", () => {
     ]);
 
     assert.deepEqual(game?.files.map((file) => file.path), [SCREEN]);
+  });
+});
+
+describe("successfulCommitCountFromUiMessages", () => {
+  it("counts a commit only after its successful output is available", () => {
+    assert.equal(
+      successfulCommitCountFromUiMessages([
+        {
+          parts: [
+            commitPart("Committed changes successfully.", "input-available"),
+            commitPart("Error committing: git failed"),
+            commitPart(),
+          ],
+        },
+      ]),
+      1,
+    );
+  });
+
+  it("recognizes the bridge tool name too", () => {
+    assert.equal(
+      successfulCommitCountFromUiMessages([
+        {
+          parts: [
+            {
+              type: "tool-git_commit_and_push",
+              state: "output-available",
+              output: "committed",
+            },
+          ],
+        },
+      ]),
+      1,
+    );
   });
 });
 
