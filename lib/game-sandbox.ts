@@ -366,9 +366,13 @@ async function ensureProcesses(sandbox: SandboxVm, token: string, newToken: bool
     sandbox,
     "curl -sf http://127.0.0.1:3000/__kayra/health || true",
   );
+  const authorized = !newToken && await commandOk(
+    sandbox,
+    `curl -sf -o /dev/null -H ${shellQuote(`Authorization: Bearer ${token}`)} http://127.0.0.1:3000/__kayra/compile-error`,
+  );
   // The bridge keeps its token in its process environment. A healthy process
   // can still hold the previous token when the session row was lost.
-  if (newToken || health !== BRIDGE_HEALTH) {
+  if (!authorized || health !== BRIDGE_HEALTH) {
     await sandbox.runCommand("bash", ["-lc", "pkill -f '[n]ode /opt/kayra-bridge.mjs' || true"], {
       timeoutMs: 15_000,
     });
@@ -396,7 +400,7 @@ async function ensureProcesses(sandbox: SandboxVm, token: string, newToken: bool
     if (
       await commandOk(
         sandbox,
-        "curl -sf -o /dev/null http://127.0.0.1:3000/__kayra/health",
+        `curl -sf -o /dev/null -H ${shellQuote(`Authorization: Bearer ${token}`)} http://127.0.0.1:3000/__kayra/compile-error`,
       )
     ) {
       return;

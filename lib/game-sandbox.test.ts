@@ -114,6 +114,29 @@ describe("ensureGameSandbox", () => {
     assert.ok(commands.some((command) => typeof command === "string" && command.includes("pkill -f '[n]ode")));
   });
 
+  it("restarts a healthy bridge when its token fails authentication", async () => {
+    let started = false;
+    const vm = createFakeVm({
+      runCommand: async (command, args) => {
+        if (typeof command !== "string" && command.cmd === "node") started = true;
+        const shell = typeof command === "string" ? (args ?? []).join(" ") : "";
+        return {
+          exitCode: shell.includes("/__kayra/compile-error") && !started ? 22 : 0,
+          stdout: async () => shell.includes("/__kayra/health") ? BRIDGE_HEALTH : "",
+          stderr: async () => "",
+        };
+      },
+    });
+    const client = createFakeClient({ getOrCreate: async () => vm }).client;
+
+    const result = await ensureGameSandbox("chat-abc", {
+      client,
+      existingToken: "expected-token",
+    });
+    assert.equal(result.token, "expected-token");
+    assert.equal(started, true);
+  });
+
   it("installs the 3D libraries when they are not in the template", async () => {
     const shells: string[] = [];
     const fake = createFakeClient({
