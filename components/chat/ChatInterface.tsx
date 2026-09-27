@@ -8,7 +8,10 @@ import { UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { CONFIG } from "../../convex/config";
 import { sandboxActionForPageEvent } from "../../lib/sandbox-page";
-import { sandboxToStopOnSwitch } from "../../lib/sandbox-lifecycle";
+import {
+  sandboxToStopOnSwitch,
+  shouldEnsureSandboxOnReload,
+} from "../../lib/sandbox-lifecycle";
 import { ThemeToggle } from "../ui/ThemeToggle";
 import { MessageComponent } from "./MessageComponent";
 import { ApiKeyModal, Toast, ConfirmDialog } from "../ui/Modals";
@@ -162,6 +165,11 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
 
   const reloadGame = async () => {
     if (!selectedChatId || isPreparing) return;
+    // Destroying the VM mid-reply kills the tool bridge and leaves isAiTurn stuck.
+    if (!shouldEnsureSandboxOnReload(isAiTurn)) {
+      showToast("Kayra is still working — wait for this reply to finish.", "info");
+      return;
+    }
     setIsPreparing(true);
     try {
       await postSandbox(selectedChatId, "ensure");
@@ -171,6 +179,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
         "error",
       );
     } finally {
+      // Always unlock the composer after ensure settles; only a live AI turn keeps it busy.
       setIsPreparing(false);
     }
   };

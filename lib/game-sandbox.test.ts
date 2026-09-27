@@ -118,6 +118,50 @@ describe("ensureGameSandbox", () => {
     assert.match(install, /pkill -f 'expo start'/);
   });
 
+  it("writes a holding page over the Expo starter before Expo serves", async () => {
+    const written: Array<{ path: string; content: string }> = [];
+    const fake = createFakeClient({
+      getOrCreate: async () =>
+        createFakeVm({
+          runCommand: async (command, args) => {
+            const shell = Array.isArray(args) ? args.join(" ") : "";
+            const missingLibs =
+              typeof command === "string" && shell.includes("node_modules/three");
+            return {
+              exitCode: missingLibs ? 1 : 0,
+              stdout: async () => "",
+              stderr: async () => "",
+            };
+          },
+          writeFiles: async (files) => {
+            for (const file of files) {
+              written.push({
+                path: file.path,
+                content:
+                  typeof file.content === "string"
+                    ? file.content
+                    : new TextDecoder().decode(file.content),
+              });
+            }
+          },
+        }),
+    });
+
+    await ensureGameSandbox("chat-abc", { client: fake.client });
+
+    const byPath = Object.fromEntries(written.map((f) => [f.path, f.content]));
+    const index = byPath["/template/app/(tabs)/index.tsx"];
+    const layout = byPath["/template/app/(tabs)/_layout.tsx"];
+    assert.ok(index, "expected holding page at /template/app/(tabs)/index.tsx");
+    assert.match(
+      index,
+      /Kayra is building your game\. When it's done, it will show here\./,
+    );
+    assert.ok(layout, "expected tab layout overwrite so Explore cannot appear");
+    assert.doesNotMatch(layout, /title:\s*['"]Explore['"]/);
+    assert.doesNotMatch(index, /Tap the Explore tab/);
+  });
+
   it("keeps the sandbox when the timeout cannot be extended further", async () => {
     const fake = createFakeClient({
       getOrCreate: async () =>

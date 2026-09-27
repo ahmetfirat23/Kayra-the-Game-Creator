@@ -11,7 +11,10 @@ import {
   extendSandboxTimeout,
   isSandboxGoneError,
 } from "../../../lib/game-sandbox";
-import { sandboxName, shouldDeleteSession } from "../../../lib/sandbox-lifecycle";
+import {
+  sandboxName,
+  shouldRecreateStaleSandbox,
+} from "../../../lib/sandbox-lifecycle";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -171,12 +174,13 @@ export async function POST(req: Request) {
 
     // ensure (default)
     const access = await convex.query(api.chat.getSandboxAccess, { chatId });
+    const chat = await convex.query(api.chat.getChat, { chatId });
     if (
       access &&
-      shouldDeleteSession({
+      shouldRecreateStaleSandbox({
         lastHeartbeatAt: access.updatedAt,
         now: Date.now(),
-        leaveRequested: false,
+        aiTurnInProgress: Boolean(chat?.isAiTurn),
       })
     ) {
       await deleteGameSandbox(chatId, { client });

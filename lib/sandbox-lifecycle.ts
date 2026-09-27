@@ -52,3 +52,35 @@ export function sandboxToStopOnSwitch(
   if (!previousChatId || previousChatId === nextChatId) return null;
   return previousChatId;
 }
+
+/**
+ * "Reload the game" calls ensure, which may tear down and recreate the VM.
+ * Never do that while Kayra is mid-turn — it kills the tool bridge and can
+ * leave the composer stuck on a dead reply.
+ */
+export function shouldEnsureSandboxOnReload(isAiTurn: boolean): boolean {
+  return !isAiTurn;
+}
+
+export type RecreateStaleInput = {
+  lastHeartbeatAt: number;
+  now: number;
+  aiTurnInProgress: boolean;
+};
+
+/**
+ * Whether ensure should delete a stale sandbox before recreating it.
+ * A mid-turn reply still needs the live VM even if the heartbeat looks old.
+ */
+export function shouldRecreateStaleSandbox({
+  lastHeartbeatAt,
+  now,
+  aiTurnInProgress,
+}: RecreateStaleInput): boolean {
+  if (aiTurnInProgress) return false;
+  return shouldDeleteSession({
+    lastHeartbeatAt,
+    now,
+    leaveRequested: false,
+  });
+}

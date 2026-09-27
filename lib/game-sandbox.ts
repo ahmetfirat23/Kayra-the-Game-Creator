@@ -123,6 +123,75 @@ async function installTemplate(sandbox: SandboxVm): Promise<boolean> {
   return true;
 }
 
+/** Quiet first screen until Kayra overwrites `/template/app/(tabs)/index.tsx`. */
+const HOLDING_PAGE = `import { StyleSheet, Text, View } from 'react-native';
+
+export default function BuildingScreen() {
+  return (
+    <View style={styles.container}>
+      <Text style={styles.tree}>🌳</Text>
+      <Text style={styles.message}>
+        Kayra is building your game. When it's done, it will show here.
+      </Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#f7f7f5',
+  },
+  tree: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  message: {
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: 'center',
+    color: '#333',
+    maxWidth: 320,
+  },
+});
+`;
+
+/** Single-screen layout so the Expo starter Explore tab cannot appear. */
+const HOLDING_TABS_LAYOUT = `import { Tabs } from 'expo-router';
+
+export default function TabLayout() {
+  return (
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: { display: 'none' },
+      }}
+    >
+      <Tabs.Screen name="index" options={{ title: 'Home' }} />
+      <Tabs.Screen name="explore" options={{ href: null }} />
+    </Tabs>
+  );
+}
+`;
+
+async function writeHoldingPage(sandbox: SandboxVm): Promise<void> {
+  await sandbox.writeFiles([
+    {
+      path: "/template/app/(tabs)/index.tsx",
+      content: HOLDING_PAGE,
+      mode: 0o644,
+    },
+    {
+      path: "/template/app/(tabs)/_layout.tsx",
+      content: HOLDING_TABS_LAYOUT,
+      mode: 0o644,
+    },
+  ]);
+}
+
 async function ensureProcesses(sandbox: SandboxVm, token: string): Promise<void> {
   await sandbox.writeFiles([
     {
@@ -204,6 +273,8 @@ export async function ensureGameSandbox(
       ["-lc", "pkill -f 'expo start' || true"],
       { timeoutMs: 15_000 },
     );
+    // Replace the Expo starter before Expo serves so the iframe is quiet.
+    await writeHoldingPage(sandbox);
   }
 
   const token = existingToken || randomBytes(32).toString("hex");

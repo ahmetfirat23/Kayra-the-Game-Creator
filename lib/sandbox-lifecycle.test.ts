@@ -5,6 +5,8 @@ import {
   sandboxName,
   sandboxToStopOnSwitch,
   shouldDeleteSession,
+  shouldEnsureSandboxOnReload,
+  shouldRecreateStaleSandbox,
 } from "./sandbox-lifecycle.ts";
 
 describe("sandboxName", () => {
@@ -91,6 +93,53 @@ describe("sandboxToStopOnSwitch", () => {
 
   it("does not stop the chat that is still selected", () => {
     assert.equal(sandboxToStopOnSwitch("chat-a", "chat-a"), null);
+  });
+});
+
+describe("shouldEnsureSandboxOnReload", () => {
+  it("refuses ensure while Kayra is mid-turn so Reload cannot kill the tool bridge", () => {
+    assert.equal(shouldEnsureSandboxOnReload(true), false);
+  });
+
+  it("allows ensure when no AI turn is in progress", () => {
+    assert.equal(shouldEnsureSandboxOnReload(false), true);
+  });
+});
+
+describe("shouldRecreateStaleSandbox", () => {
+  const now = 1_000_000;
+
+  it("does not delete a stale VM while an AI turn is using it", () => {
+    assert.equal(
+      shouldRecreateStaleSandbox({
+        lastHeartbeatAt: now - 60_000,
+        now,
+        aiTurnInProgress: true,
+      }),
+      false,
+    );
+  });
+
+  it("still recreates a stale VM when no AI turn is in progress", () => {
+    assert.equal(
+      shouldRecreateStaleSandbox({
+        lastHeartbeatAt: now - 60_000,
+        now,
+        aiTurnInProgress: false,
+      }),
+      true,
+    );
+  });
+
+  it("keeps a fresh heartbeat even when idle", () => {
+    assert.equal(
+      shouldRecreateStaleSandbox({
+        lastHeartbeatAt: now - 10_000,
+        now,
+        aiTurnInProgress: false,
+      }),
+      false,
+    );
   });
 });
 
