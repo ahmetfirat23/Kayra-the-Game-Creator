@@ -24,6 +24,35 @@ interface ChatInterfaceProps {
   mounted: boolean;
 }
 
+type PreviewProgressStage = "starting" | "editing" | "loading";
+
+function PreviewProgress({ stage }: { stage: PreviewProgressStage }) {
+  const label = stage === "starting"
+    ? "Starting your game"
+    : stage === "editing"
+      ? "Kayra is updating your game"
+      : "Loading the latest game";
+  return (
+    <div role="status" aria-live="polite" className="flex w-full flex-col gap-2 rounded-xl bg-white/90 px-4 py-3 text-[#4A5568] shadow-sm dark:bg-[#1A202C]/90 dark:text-[#E2E8F0]">
+      <span className="text-sm font-semibold">{label}</span>
+      <div aria-hidden="true" className="flex h-1.5 gap-1 overflow-hidden rounded-full">
+        {[0, 1].map((step) => (
+          <span
+            key={step}
+            className={`h-full flex-1 rounded-full ${
+              step < (stage === "loading" ? 1 : 0)
+                ? "bg-[#7EC8A8]"
+                : step === (stage === "loading" ? 1 : 0)
+                  ? "animate-pulse bg-[#7EB8D8]"
+                  : "bg-[#DDE5EC] dark:bg-[#4A5568]"
+            }`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProps) {
   const router = useRouter();
   const [input, setInput] = useState("");
@@ -83,6 +112,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   const isAiTurn = selectedChat?.isAiTurn || false;
   const isCurrentChatProcessing = isAiTurn || isSending;
   const [previewEpoch, setPreviewEpoch] = useState(0);
+  const [loadingPreviewChatId, setLoadingPreviewChatId] = useState<Id<"chats"> | null>(null);
 
   const successfulCommitCount = successfulCommitCountFromUiMessages(messages);
   const observedCommits = useRef<{ chatId: Id<"chats"> | null; count: number }>({
@@ -102,6 +132,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
     }
 
     if (successfulCommitCount > observedCommits.current.count) {
+      setLoadingPreviewChatId(selectedChatId);
       setPreviewEpoch((epoch) => epoch + 1);
     }
     observedCommits.current.count = successfulCommitCount;
@@ -224,6 +255,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
     try {
       await postSandbox(chatId, "ensure", undefined, controller.signal);
       if (reloadController.current?.controller === controller && selectedChatIdRef.current === chatId) {
+        setLoadingPreviewChatId(chatId);
         setPreviewEpoch((epoch) => epoch + 1);
       }
     } catch (error) {
@@ -242,6 +274,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   };
 
   useLayoutEffect(() => {
+    setLoadingPreviewChatId(null);
     if (reloadController.current && reloadController.current.chatId !== selectedChatId) {
       const abandonedChatId = reloadController.current.chatId;
       reloadController.current.controller.abort();
@@ -576,6 +609,13 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
     preparing: isPreparing,
     previewKnown: preview !== undefined,
   });
+  const progressStage: PreviewProgressStage | null = isPreparing
+    ? "starting"
+    : loadingPreviewChatId === selectedChatId && selectedChatId !== null
+      ? "loading"
+      : isAiTurn
+        ? "editing"
+        : null;
 
   useEffect(() => {
     if (!selectedChatId || pane !== "game" || isAiTurn || isPreparing) return;
@@ -925,19 +965,25 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
         }`}>
           <div className="relative flex-1 bg-gradient-to-br from-[#F0E6FA] via-[#FAFBFC] to-[#E8F4FC] dark:from-[#1A202C] dark:via-[#2D3748] dark:to-[#1A202C] p-0 md:p-6 flex items-center justify-center">
             {pane === "game" && preview?.previewUrl ? (
-              <div className="w-full h-full rounded-3xl overflow-hidden border-2 border-[#E8F4FC] dark:border-[#4A5568] shadow-[0_8px_32px_rgba(168,212,230,0.2)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
+              <div className="relative w-full h-full rounded-3xl overflow-hidden border-2 border-[#E8F4FC] dark:border-[#4A5568] shadow-[0_8px_32px_rgba(168,212,230,0.2)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
                 <iframe
                   key={`${preview.previewUrl}-${previewEpoch}`}
                   src={previewFrameSrc(preview.previewUrl, previewEpoch)}
                   title="Game preview"
                   className="w-full h-full border-0 bg-[#F0E6FA] dark:bg-[#1A202C]"
+                  onLoad={() => setLoadingPreviewChatId((current) => current === selectedChatId ? null : current)}
                 />
+                {progressStage && (
+                  <div className="pointer-events-none absolute inset-x-3 top-3 z-10 max-w-sm">
+                    <PreviewProgress stage={progressStage} />
+                  </div>
+                )}
               </div>
-            ) : pane === "starting" ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-8 gap-3.5">
+            ) : progressStage ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-8 gap-4">
                 <div className="text-6xl leading-none">🌳</div>
                 <div className="text-4xl font-bold tracking-tight leading-none text-[#7EB8D8] dark:text-[#A8D4E6]">Kayra</div>
-                <p className="m-0 max-w-[220px] text-[15px] leading-snug font-medium text-[#718096] dark:text-[#A0AEC0]">Starting your game</p>
+                <div className="w-full max-w-xs"><PreviewProgress stage={progressStage} /></div>
               </div>
             ) : pane === "loading" ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-8 gap-3.5">
