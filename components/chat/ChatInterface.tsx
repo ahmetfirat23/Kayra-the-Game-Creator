@@ -107,6 +107,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesContentRef = useRef<HTMLDivElement>(null);
   const scrolledChatIdRef = useRef<Id<"chats"> | null>(null);
+  const chatPaneVisibleRef = useRef(false);
   const [shownByokFallbackNotice, setShownByokFallbackNotice] = useState(false);
   const lastMessageId = messages[messages.length - 1]?.id;
 
@@ -145,13 +146,22 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
     const content = messagesContentRef.current;
     if (!container || !content || !selectedChatId || messages.length === 0) return;
 
-    const justOpened = scrolledChatIdRef.current !== selectedChatId;
+    // On a phone the chat list is display:none while Game is open, so a
+    // scroll from that moment does not stick. Jump again when Chat is shown.
+    if (mobileView !== "chat") {
+      chatPaneVisibleRef.current = false;
+      return;
+    }
+
+    const justShown =
+      scrolledChatIdRef.current !== selectedChatId || !chatPaneVisibleRef.current;
+    chatPaneVisibleRef.current = true;
 
     const scrollToEnd = (behavior: ScrollBehavior) => {
       container.scrollTo({ top: container.scrollHeight, behavior });
     };
 
-    if (justOpened) {
+    if (justShown) {
       let adjusting = true;
       scrollToEnd("auto");
       const observer = new ResizeObserver(() => {
@@ -167,7 +177,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
         observer.disconnect();
       };
       const onScroll = () => {
-        if (adjusting) return;
+        if (adjusting || container.clientHeight === 0) return;
         const distanceFromBottom =
           container.scrollHeight - container.scrollTop - container.clientHeight;
         if (distanceFromBottom > 80) markSettled();
@@ -175,6 +185,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
       container.addEventListener("scroll", onScroll, { passive: true });
       const release = requestAnimationFrame(() => {
         adjusting = false;
+        scrollToEnd("auto");
       });
       const stop = window.setTimeout(markSettled, 1000);
       return () => {
@@ -186,7 +197,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
     }
 
     scrollToEnd("smooth");
-  }, [selectedChatId, messages.length, lastMessageId]);
+  }, [selectedChatId, messages.length, lastMessageId, mobileView]);
   
   const showToast = (message: string, type: "error" | "success" | "info" = "info") => {
     setToast({ message, type });
