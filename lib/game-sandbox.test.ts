@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { BRIDGE_HEALTH } from "./kayra-bridge.mjs";
 import {
   HOLDING_SENTENCE,
   SESSION_TIMEOUT_MS,
@@ -89,6 +90,30 @@ describe("isSandboxGoneError", () => {
 });
 
 describe("ensureGameSandbox", () => {
+  it("restarts a healthy bridge when its stored token is missing", async () => {
+    const commands: Array<string | { cmd: string; env?: Record<string, string> }> = [];
+    const vm = createFakeVm({
+      runCommand: async (command, args) => {
+        commands.push(typeof command === "string" ? (args ?? []).join(" ") : command);
+        const shell = typeof command === "string" ? (args ?? []).join(" ") : "";
+        return {
+          exitCode: 0,
+          stdout: async () => shell.includes("/__kayra/health") ? BRIDGE_HEALTH : "",
+          stderr: async () => "",
+        };
+      },
+    });
+    const client = createFakeClient({ getOrCreate: async () => vm }).client;
+
+    const result = await ensureGameSandbox("chat-abc", { client });
+    const bridgeStart = commands.find(
+      (command) => typeof command !== "string" && command.cmd === "node",
+    );
+    assert.ok(bridgeStart && typeof bridgeStart !== "string");
+    assert.equal(bridgeStart.env?.KAYRA_TOKEN, result.token);
+    assert.ok(commands.some((command) => typeof command === "string" && command.includes("pkill -f '[n]ode")));
+  });
+
   it("installs the 3D libraries when they are not in the template", async () => {
     const shells: string[] = [];
     const fake = createFakeClient({
@@ -279,7 +304,7 @@ describe("ensureGameSandbox", () => {
     await ensureGameSandbox("chat-abc", { client: fake.client });
 
     const text = JSON.stringify(calls);
-    assert.match(text, /pkill -f 'node \/opt\/kayra-bridge\.mjs'/);
+    assert.match(text, /pkill -f '\[n\]ode \/opt\/kayra-bridge\.mjs'/);
     assert.match(text, /KAYRA_RESTART_EXPO/);
     assert.match(text, /max-old-space-size=1536/);
   });

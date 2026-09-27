@@ -353,7 +353,7 @@ async function restoreFinishedGame(
   }
 }
 
-async function ensureProcesses(sandbox: SandboxVm, token: string): Promise<void> {
+async function ensureProcesses(sandbox: SandboxVm, token: string, newToken: boolean): Promise<void> {
   await sandbox.writeFiles([
     {
       path: "/opt/kayra-bridge.mjs",
@@ -366,8 +366,10 @@ async function ensureProcesses(sandbox: SandboxVm, token: string): Promise<void>
     sandbox,
     "curl -sf http://127.0.0.1:3000/__kayra/health || true",
   );
-  if (health !== BRIDGE_HEALTH) {
-    await sandbox.runCommand("bash", ["-lc", "pkill -f 'node /opt/kayra-bridge.mjs' || true"], {
+  // The bridge keeps its token in its process environment. A healthy process
+  // can still hold the previous token when the session row was lost.
+  if (newToken || health !== BRIDGE_HEALTH) {
+    await sandbox.runCommand("bash", ["-lc", "pkill -f '[n]ode /opt/kayra-bridge.mjs' || true"], {
       timeoutMs: 15_000,
     });
     await sandbox.runCommand({
@@ -445,8 +447,9 @@ export async function ensureGameSandbox(
     await writeHoldingPage(sandbox);
   }
 
+  const newToken = !existingToken;
   const token = existingToken || randomBytes(32).toString("hex");
-  await ensureProcesses(sandbox, token);
+  await ensureProcesses(sandbox, token, newToken);
 
   const previewUrl = sandbox.domain(BRIDGE_PORT);
   return {
