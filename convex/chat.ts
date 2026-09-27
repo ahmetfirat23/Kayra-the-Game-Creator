@@ -5,7 +5,9 @@ import { CONFIG } from "./config";
 import { components } from "./_generated/api";
 import { saveMessage, listMessages, syncStreams, toUIMessages, vStreamArgs } from "@convex-dev/agent";
 import { paginationOptsValidator } from "convex/server";
-import { authenticateAndVerifyChatOwnership, aggregateUsageByOrder, categorizeError } from "./ChatHelper";
+import { authenticateAndVerifyChatOwnership, aggregateUsageByOrder } from "./ChatHelper";
+import { categorizeError } from "./categorizeError";
+import { isFreestyleRepoId, missingSandboxSessionMessage, previewForClient } from "./sandboxSession";
 import { resolveApiKey } from "./ApiKeyResolver";
 import { createTurnBasedContextHandler } from "./ContextHandler";
 import { getUserFromContext, isInProPeriod } from "./users";
@@ -41,8 +43,8 @@ export const listChats = query({
 });
 
 /**
- * Creates a new chat for the current user. T
- * The actual Freestyle repo creation happens in a separate action.
+ * Creates a new chat for the current user.
+ * New chats use a Vercel sandbox (repoId: "sandbox"); Freestyle is not scheduled.
  */
 export const createChat = mutation({
     args: {},
@@ -65,14 +67,9 @@ export const createChat = mutation({
             userId: user._id,
             name: `3D Game ${Date.now()}`, // TODO: Use AI summary for name
             createdAt: Date.now(),
-            repoId: "pending", // Placeholder until repo is created
+            repoId: "sandbox",
         });
-        
-        // Schedule action to create the Freestyle repo
-        await ctx.scheduler.runAfter(0, internal.chat.createAndAttachRepo, {
-            chatId,
-        });
-        
+
         return chatId;
     },
 });
@@ -269,7 +266,7 @@ export const sendMessage = mutation({
             throw new Error("Too many messages. Please wait a moment before sending another.");
         }
 
-        if (!chat.repoId || chat.repoId === "pending") {
+        if (!chat.repoId) {
             throw new Error("Repository is still being created. Please wait a moment and try again.");
         }
 
@@ -417,19 +414,18 @@ export const processMessage = internalAction({
             // Import dependencies
             const { createAgent, createFreestyleTools, resetToolCallTracker, getToolCallTracker } = await import("./agent");
             const { stepCountIs } = await import("@convex-dev/agent");
-            const { freestyle } = await import("../lib/freestyle");
-            const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
-            const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+            const { createSandboxToolClient } = await import("./sandboxClient");
 
             resetToolCallTracker();
 
-            // Connect to MCP server once
-            const devServer = await freestyle.requestDevServer({ repoId: args.repoId });
-            const mcpClient = new Client(
-                { name: "game-builder", version: "1.0.0" },
-                { capabilities: {} }
-            );
-            await mcpClient.connect(new StreamableHTTPClientTransport(new URL(devServer.mcpEphemeralUrl)));
+            const session = await ctx.runQuery(internal.chat.getSandboxSession, {
+                chatId: args.chatId,
+            });
+            if (!session) {
+                throw new Error(missingSandboxSessionMessage());
+            }
+
+            const mcpClient = createSandboxToolClient(session.execUrl, session.token);
 
             const freestyleTools = createFreestyleTools(mcpClient);
             const agent = createAgent(apiKey);
@@ -527,6 +523,108 @@ export const getChat = query({
 });
 
 /**
+ * Owner registers (or replaces) the live sandbox session for a chat.
+ */
+export const registerSandbox = mutation({
+    args: {
+        chatId: v.id("chats"),
+        previewUrl: v.string(),
+        execUrl: v.string(),
+        token: v.string(),
+    },
+    handler: async (ctx, args) => {
+        await authenticateAndVerifyChatOwnership(ctx, args.chatId);
+
+        const existing = await ctx.db
+            .query("sandboxes")
+            .withIndex("by_chat", (q) => q.eq("chatId", args.chatId))
+            .collect();
+        for (const row of existing) {
+            await ctx.db.delete(row._id);
+        }
+
+        await ctx.db.insert("sandboxes", {
+            chatId: args.chatId,
+            previewUrl: args.previewUrl,
+            execUrl: args.execUrl,
+            token: args.token,
+            updatedAt: Date.now(),
+        });
+    },
+});
+
+/**
+ * Owner-facing preview payload: previewUrl only (never token or execUrl).
+ */
+export const getPreview = query({
+    args: {
+        chatId: v.id("chats"),
+    },
+    handler: async (ctx, args) => {
+        await authenticateAndVerifyChatOwnership(ctx, args.chatId);
+
+        const row = await ctx.db
+            .query("sandboxes")
+            .withIndex("by_chat", (q) => q.eq("chatId", args.chatId))
+            .first();
+        if (!row) {
+            return null;
+        }
+        return previewForClient(row);
+    },
+});
+
+/**
+ * Owner session for the Next.js sandbox route. Includes the command token.
+ * The preview pane uses getPreview, which does not return the token.
+ */
+export const getSandboxAccess = query({
+    args: {
+        chatId: v.id("chats"),
+    },
+    handler: async (ctx, args) => {
+        await authenticateAndVerifyChatOwnership(ctx, args.chatId);
+        const row = await ctx.db
+            .query("sandboxes")
+            .withIndex("by_chat", (q) => q.eq("chatId", args.chatId))
+            .first();
+        if (!row) {
+            return null;
+        }
+        return {
+            previewUrl: row.previewUrl,
+            execUrl: row.execUrl,
+            token: row.token,
+            updatedAt: row.updatedAt,
+        };
+    },
+});
+
+/**
+ * Internal sandbox session for processMessage.
+ */
+export const getSandboxSession = internalQuery({
+    args: {
+        chatId: v.id("chats"),
+    },
+    handler: async (ctx, args) => {
+        const row = await ctx.db
+            .query("sandboxes")
+            .withIndex("by_chat", (q) => q.eq("chatId", args.chatId))
+            .first();
+        if (!row) {
+            return null;
+        }
+        return {
+            previewUrl: row.previewUrl,
+            execUrl: row.execUrl,
+            token: row.token,
+            updatedAt: row.updatedAt,
+        };
+    },
+});
+
+/**
  * Updates a chat with its associated agent thread ID.
  */
 export const updateChatThreadId = mutation({
@@ -591,6 +689,14 @@ export const deleteChat = mutation({
             await ctx.db.delete(message._id);
         }
 
+        const sandboxRows = await ctx.db
+            .query("sandboxes")
+            .withIndex("by_chat", (q) => q.eq("chatId", args.chatId))
+            .collect();
+        for (const row of sandboxRows) {
+            await ctx.db.delete(row._id);
+        }
+
         // Delete the agent thread and all its messages if it exists
         if (chat.threadId) {
             await ctx.scheduler.runAfter(0, internal.chat.deleteThread, {
@@ -598,8 +704,8 @@ export const deleteChat = mutation({
             });
         }
 
-        // Delete the Freestyle repository if it exists
-        if (chat.repoId && chat.repoId !== "pending") {
+        // Delete the Freestyle repository only for legacy UUID repo ids
+        if (chat.repoId && isFreestyleRepoId(chat.repoId)) {
             await ctx.scheduler.runAfter(0, internal.chat.deleteRepo, {
                 repoId: chat.repoId,
             });

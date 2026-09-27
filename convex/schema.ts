@@ -33,7 +33,7 @@ export default defineSchema({
         name: v.string(), // Chat name
         createdAt: v.number(), // Timestamp when chat was created
         threadId: v.optional(v.string()), // ID of associated agent thread
-        repoId: v.optional(v.string()), // Freestyle Git repository ID
+        repoId: v.optional(v.string()), // Legacy Freestyle id or "sandbox"
         isAiTurn: v.optional(v.boolean()), // True when AI is thinking/responding
     }).index("by_user", ["userId"]),
     
@@ -42,6 +42,14 @@ export default defineSchema({
         text: v.string(), // Message text content
         sender: v.union(v.literal("user"), v.literal("assistant")), // Who sent the message
         totalTokens: v.optional(v.number()), // Total tokens used in this message (for assistant messages)
+    }).index("by_chat", ["chatId"]),
+
+    sandboxes: defineTable({
+        chatId: v.id("chats"),
+        previewUrl: v.string(),
+        execUrl: v.string(),
+        token: v.string(),
+        updatedAt: v.number(),
     }).index("by_chat", ["chatId"]),
     
     usage: defineTable({
