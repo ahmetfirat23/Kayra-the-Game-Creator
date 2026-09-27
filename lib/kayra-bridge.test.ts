@@ -10,6 +10,7 @@ import {
   handleHttpRequest,
   handleTool,
   layoutTouchPath,
+  expoRestartOrder,
   previewWaitingPage,
   refusedShell,
 } from "./kayra-bridge.mjs";
@@ -150,6 +151,8 @@ describe("kayra-bridge refused commands", () => {
     const script = expoRestartScript();
     assert.match(script, /max-old-space-size=1536/);
     assert.match(script, /pkill -f 'expo start'/);
-    assert.equal(BRIDGE_HEALTH, "ok 4");
+    assert.equal(BRIDGE_HEALTH, "ok 5");
+    assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
+    assert.deepEqual(expoRestartOrder({}), []);
   });
 });
