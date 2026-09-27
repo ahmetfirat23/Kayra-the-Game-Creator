@@ -2,6 +2,11 @@ import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  applyTextEdits,
+  includesGameScreen,
+  type FinishedGame,
+} from "./finished-game.ts";
 import { sandboxName } from "./sandbox-lifecycle.ts";
 import { BRIDGE_HEALTH } from "./kayra-bridge.mjs";
 
@@ -56,6 +61,8 @@ export type SandboxClient = {
 export type GameSandboxOptions = {
   client: SandboxClient;
   existingToken?: string | null;
+  /** Files from the last successful commit. Written before Expo starts. */
+  game?: FinishedGame | null;
 };
 
 export type EnsureResult = {
@@ -99,8 +106,15 @@ async function commandOutput(sandbox: SandboxVm, shell: string): Promise<string>
 }
 
 function expoStartShell(): string {
-  return "cd /template && CI=1 EXPO_NO_TELEMETRY=1 NODE_OPTIONS=--max-old-space-size=1536 npx expo start --web --port 19006 --host lan";
+  return "cd /template && CI=1 EXPO_NO_TELEMETRY=1 NODE_OPTIONS=--max-old-space-size=1536 npx expo start --clear --web --port 19006 --host lan";
 }
+
+function shellQuote(value: string): string {
+  return "'" + value.replace(/'/g, "'\\''") + "'";
+}
+
+export const HOLDING_SENTENCE =
+  "Kayra is building your game. When it's done, it will show here.";
 
 async function installTemplate(sandbox: SandboxVm): Promise<boolean> {
   const installed = await commandOk(
@@ -148,7 +162,7 @@ export default function BuildingScreen() {
       <Text style={styles.tree}>🌳</Text>
       <Text style={[styles.word, dark && styles.wordDark]}>Kayra</Text>
       <Text style={[styles.message, dark && styles.messageDark]}>
-        Kayra is building your game. When it's done, it will show here.
+        ${HOLDING_SENTENCE}
       </Text>
     </View>
   );
@@ -253,6 +267,83 @@ async function writeHoldingPage(sandbox: SandboxVm): Promise<void> {
   ]);
 }
 
+async function stopExpo(sandbox: SandboxVm): Promise<void> {
+  await sandbox.runCommand(
+    "bash",
+    ["-lc", "pkill -f 'expo start' || true; pkill -f '[m]etro' || true"],
+    { timeoutMs: 15_000 },
+  );
+  await sandbox.runCommand(
+    "bash",
+    [
+      "-lc",
+      "rm -rf /template/.expo /template/node_modules/.cache /tmp/metro-* /tmp/haste-map-*",
+    ],
+    { timeoutMs: 15_000 },
+  );
+}
+
+async function isHoldingPage(sandbox: SandboxVm): Promise<boolean> {
+  return commandOk(
+    sandbox,
+    `grep -F -q ${shellQuote(HOLDING_SENTENCE)} ${shellQuote("/template/app/(tabs)/index.tsx")}`,
+  );
+}
+
+async function readSandboxText(
+  sandbox: SandboxVm,
+  filePath: string,
+): Promise<string | null> {
+  const result = await sandbox.runCommand(
+    "bash",
+    ["-lc", `base64 -w 0 ${shellQuote(filePath)}`],
+    { timeoutMs: 15_000 },
+  );
+  if (result.exitCode !== 0) return null;
+  const encoded = (await result.stdout()).replace(/\s+/g, "");
+  if (!encoded) return null;
+  return Buffer.from(encoded, "base64").toString("utf8");
+}
+
+async function restoreFinishedGame(
+  sandbox: SandboxVm,
+  game: FinishedGame,
+): Promise<void> {
+  if (game.files.length > 0) {
+    const dirs = [
+      ...new Set(
+        game.files.map((file) => file.path.split("/").slice(0, -1).join("/")),
+      ),
+    ].filter(Boolean);
+    if (dirs.length > 0) {
+      await sandbox.runCommand(
+        "bash",
+        ["-lc", dirs.map((dir) => `mkdir -p ${shellQuote(dir)}`).join(" && ")],
+        { timeoutMs: 15_000 },
+      );
+    }
+    await sandbox.writeFiles(
+      game.files.map((file) => ({
+        path: file.path,
+        content: file.content,
+        mode: 0o644,
+      })),
+    );
+  }
+
+  for (const edit of game.diskEdits) {
+    const current = await readSandboxText(sandbox, edit.path);
+    if (current == null) continue;
+    await sandbox.writeFiles([
+      {
+        path: edit.path,
+        content: applyTextEdits(current, edit.edits),
+        mode: 0o644,
+      },
+    ]);
+  }
+}
+
 async function ensureProcesses(sandbox: SandboxVm, token: string): Promise<void> {
   await sandbox.writeFiles([
     {
@@ -310,7 +401,7 @@ export async function ensureGameSandbox(
   chatId: string,
   options: GameSandboxOptions,
 ): Promise<EnsureResult> {
-  const { client, existingToken } = options;
+  const { client, existingToken, game } = options;
   const name = sandboxName(chatId);
 
   const sandbox = await client.getOrCreate({
@@ -326,14 +417,22 @@ export async function ensureGameSandbox(
   await extendSandboxTimeout(sandbox, SESSION_TIMEOUT_MS);
 
   const installedNow = await installTemplate(sandbox);
-  if (installedNow) {
-    // Metro keeps a failed resolve until Expo starts again.
-    await sandbox.runCommand(
-      "bash",
-      ["-lc", "pkill -f 'expo start' || true"],
-      { timeoutMs: 15_000 },
-    );
-    // Replace the Expo starter before Expo serves so the iframe is quiet.
+  const hasGame = Boolean(game && (game.files.length > 0 || game.diskEdits.length > 0));
+  // A fresh template, or a machine still showing the placeholder, does not
+  // have this chat's game. Put the committed files on disk before Expo starts.
+  const shouldRestore =
+    hasGame && (installedNow || (await isHoldingPage(sandbox)));
+
+  if (installedNow || shouldRestore) {
+    await stopExpo(sandbox);
+  }
+
+  if (shouldRestore && game) {
+    if (!includesGameScreen(game)) {
+      await writeHoldingPage(sandbox);
+    }
+    await restoreFinishedGame(sandbox, game);
+  } else if (installedNow) {
     await writeHoldingPage(sandbox);
   }
 

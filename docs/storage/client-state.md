@@ -19,12 +19,12 @@ type Theme = 'light' | 'dark' | 'system';
 
 ## Preparing / reload spinner — React state
 
-`isPreparing` in `ChatInterface` is React state only. It covers the “Starting your game” screen around `POST /api/sandbox` `ensure` (send and “Reload the game”). It is not persisted. `previewLiveChatId` is also React state: it remembers which chat this visit has started, so a stored preview URL does not open the iframe on its own.
+`isPreparing` in `ChatInterface` is React state only. It covers the “Starting your game” screen around `POST /api/sandbox` `ensure` (send and “Reload the game”). It is not persisted.
 
 ## Preview URL — Convex row, not client storage
 
-`ChatInterface` reads `api.chat.getPreview`, which returns `{ previewUrl }` from the `sandboxes` table via `previewForClient`. That URL becomes the iframe `src` only after this visit starts the machine. Do not treat the preview address as `localStorage`.
+`ChatInterface` reads `api.chat.getPreview`, which returns `{ previewUrl, live }` from the `sandboxes` table via `previewForClient`. `live` follows `updatedAt`. Any screen with that chat open, including a phone, uses the URL while `live` is true. Do not treat the preview address as `localStorage`.
 
-## Game files — not client state
+## Game files — thread, then VM disk
 
-Game source lives on the sandbox VM disk under `/template` (`persistent: false`). It is not stored in React state or Convex document fields.
+Kayra’s writes and edits live in the agent thread. `finishedGameFromUiMessages` keeps the files from the last successful commit. Reload writes those onto `/template` before Expo starts. The running copy is the sandbox disk (`persistent: false`). It is not a Convex document field and not React state.

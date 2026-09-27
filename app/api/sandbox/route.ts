@@ -4,6 +4,10 @@ import { NextResponse } from "next/server";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import {
+  finishedGameFromUiMessages,
+  type FinishedGame,
+} from "../../../lib/finished-game";
+import {
   createVercelSandboxClient,
   deleteGameSandbox,
   downloadGameArchive,
@@ -22,6 +26,33 @@ export const maxDuration = 300;
 type SandboxAction = "ensure" | "delete" | "download" | "heartbeat" | "leave";
 
 const LEAVE_GRACE_MS = 3_000;
+
+type ThreadPage = {
+  page?: Array<{ parts?: unknown }>;
+  isDone?: boolean;
+  continueCursor?: string;
+};
+
+/** Replay this chat's last successful commit. Null when no game has been committed. */
+async function committedGame(
+  convex: ConvexHttpClient,
+  threadId: string | undefined,
+): Promise<FinishedGame | null> {
+  if (!threadId) return null;
+  const messages: Array<{ parts?: unknown }> = [];
+  let cursor: string | null = null;
+  for (let pageNumber = 0; pageNumber < 20; pageNumber++) {
+    const result = (await convex.query(api.chat.listThreadMessages, {
+      threadId,
+      paginationOpts: { numItems: 50, cursor },
+      streamArgs: { kind: "list" },
+    })) as ThreadPage;
+    messages.push(...(result.page ?? []));
+    if (result.isDone || !result.continueCursor) break;
+    cursor = result.continueCursor;
+  }
+  return finishedGameFromUiMessages(messages);
+}
 
 type SandboxRequestBody = {
   chatId?: string;
@@ -187,9 +218,11 @@ export async function POST(req: Request) {
       await convex.mutation(api.chat.clearSandbox, { chatId });
     }
 
+    const game = await committedGame(convex, chat?.threadId);
     const ensured = await ensureGameSandbox(chatId, {
       client,
       existingToken: access?.token,
+      game,
     });
 
     await convex.mutation(api.chat.registerSandbox, {

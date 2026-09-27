@@ -33,6 +33,7 @@ describe("previewForClient", () => {
 
     assert.deepEqual(result, {
       previewUrl: "https://preview.example/app",
+      live: false,
     });
     assert.equal("token" in result, false);
     assert.equal("execUrl" in result, false);

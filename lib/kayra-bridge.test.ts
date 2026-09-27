@@ -11,6 +11,7 @@ import {
   handleTool,
   layoutTouchPath,
   expoRestartOrder,
+  previewResponseHeaders,
   previewWaitingPage,
   refusedShell,
 } from "./kayra-bridge.mjs";
@@ -151,8 +152,24 @@ describe("kayra-bridge refused commands", () => {
     const script = expoRestartScript();
     assert.match(script, /max-old-space-size=1536/);
     assert.match(script, /pkill -f 'expo start'/);
-    assert.equal(BRIDGE_HEALTH, "ok 5");
+    assert.match(script, /--clear/);
+    assert.match(script, /rm -rf \/template\/\.expo/);
+    assert.match(script, /node_modules\/\.cache/);
+    assert.equal(BRIDGE_HEALTH, "ok 6");
     assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
     assert.deepEqual(expoRestartOrder({}), []);
+  });
+
+  it("does not let the browser keep the previous bundle", () => {
+    const headers = previewResponseHeaders({
+      "Content-Type": "text/html",
+      ETag: "old-bundle",
+      "Cache-Control": "public, max-age=31536000",
+      "X-Frame-Options": "DENY",
+    });
+    assert.equal(headers["cache-control"], "no-store");
+    assert.equal(headers["Content-Type"], "text/html");
+    assert.equal("ETag" in headers, false);
+    assert.equal("X-Frame-Options" in headers, false);
   });
 });

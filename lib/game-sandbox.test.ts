@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  HOLDING_SENTENCE,
   SESSION_TIMEOUT_MS,
   deleteGameSandbox,
   downloadGameArchive,
@@ -163,6 +164,97 @@ describe("ensureGameSandbox", () => {
     assert.ok(layout, "expected tab layout overwrite so Explore cannot appear");
     assert.doesNotMatch(layout, /title:\s*['"]Explore['"]/);
     assert.doesNotMatch(index, /Tap the Explore tab/);
+  });
+
+  it("restores a committed game onto a fresh machine before Expo starts", async () => {
+    const order: string[] = [];
+    const written: Array<{ path: string; content: string }> = [];
+    const fake = createFakeClient({
+      getOrCreate: async () =>
+        createFakeVm({
+          runCommand: async (command, args) => {
+            const shell = Array.isArray(args) ? args.join(" ") : "";
+            const described =
+              typeof command === "string" ? shell : JSON.stringify(command);
+            if (described.includes("npx expo start")) order.push("expo");
+            const missingLibs = shell.includes("node_modules/three");
+            const expoDown = shell.includes("19006");
+            return {
+              exitCode: missingLibs || expoDown ? 1 : 0,
+              stdout: async () => "",
+              stderr: async () => "",
+            };
+          },
+          writeFiles: async (files) => {
+            for (const file of files) {
+              const content =
+                typeof file.content === "string"
+                  ? file.content
+                  : new TextDecoder().decode(file.content);
+              written.push({ path: file.path, content });
+              order.push(`write:${file.path}`);
+            }
+          },
+        }),
+    });
+
+    const screen = "export default function Game(){return null}";
+    await ensureGameSandbox("chat-abc", {
+      client: fake.client,
+      game: {
+        files: [{ path: "/template/app/(tabs)/index.tsx", content: screen }],
+        diskEdits: [],
+      },
+    });
+
+    const index = written.find((file) => file.path === "/template/app/(tabs)/index.tsx");
+    assert.equal(index?.content, screen);
+    assert.equal(
+      written.some((file) => file.content.includes(HOLDING_SENTENCE)),
+      false,
+    );
+    const wroteGame = order.indexOf("write:/template/app/(tabs)/index.tsx");
+    const startedExpo = order.indexOf("expo");
+    assert.ok(wroteGame >= 0);
+    assert.ok(startedExpo > wroteGame);
+  });
+
+  it("replaces a placeholder already on disk and leaves a real game alone", async () => {
+    const written: string[] = [];
+    const game = {
+      files: [{ path: "/template/app/(tabs)/index.tsx", content: "the game" }],
+      diskEdits: [],
+    };
+
+    async function run(holdingOnDisk: boolean) {
+      written.length = 0;
+      const fake = createFakeClient({
+        getOrCreate: async () =>
+          createFakeVm({
+            runCommand: async (command, args) => {
+              const shell = Array.isArray(args) ? args.join(" ") : "";
+              if (shell.includes("grep -F")) {
+                return {
+                  exitCode: holdingOnDisk ? 0 : 1,
+                  stdout: async () => "",
+                  stderr: async () => "",
+                };
+              }
+              return { exitCode: 0, stdout: async () => "ok 5", stderr: async () => "" };
+            },
+            writeFiles: async (files) => {
+              for (const file of files) written.push(file.path);
+            },
+          }),
+      });
+      await ensureGameSandbox("chat-abc", { client: fake.client, game });
+    }
+
+    await run(true);
+    assert.ok(written.includes("/template/app/(tabs)/index.tsx"));
+
+    await run(false);
+    assert.equal(written.includes("/template/app/(tabs)/index.tsx"), false);
   });
 
   it("replaces an old bridge and starts Expo with enough memory", async () => {

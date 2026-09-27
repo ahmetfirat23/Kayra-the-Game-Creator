@@ -6,15 +6,17 @@
 
 ### Convex `sandboxes` row
 
-`registerSandbox` writes one row per chat: `previewUrl`, `execUrl`, `token`, `updatedAt`. `getPreview` returns only `{ previewUrl }`. `getSandboxAccess` returns the full session to the signed-in owner for the Next.js route (not for the iframe).
+`registerSandbox` writes one row per chat: `previewUrl`, `execUrl`, `token`, `updatedAt`. `getPreview` returns `{ previewUrl, live }`. `getSandboxAccess` returns the full session to the signed-in owner for the Next.js route (not for the iframe).
 
 ### VM disk
 
-Game files live under `/template` inside the sandbox. Created with `persistent: false`, `VCPUS = 1`, `SESSION_TIMEOUT_MS = 10 * 60 * 1000`. Gone when the VM is deleted. Not a Convex document.
+Game files live under `/template` inside the sandbox. Created with `persistent: false`, `VCPUS = 1`, `SESSION_TIMEOUT_MS = 10 * 60 * 1000`. Gone when the VM is deleted. Not a Convex document. The last successful commit stays in the agent thread and is written back before Expo starts.
 
 ## Shown from
 
-`ChatInterface` queries `api.chat.getPreview`. The iframe is mounted only after this visit calls `ensure` (Reload or send), via `shouldShowLivePreview`. A stored `previewUrl` on its own shows “This preview is stopped.” and “Reload the game”. While `isPreparing` is true, the pane shows the starting screen instead of the iframe.
+`ChatInterface` queries `api.chat.getPreview`. `previewForClient` returns `{ previewUrl, live }`. `live` is true while `updatedAt` is inside the last 60 seconds. `shouldShowLivePreview` mounts that URL on every screen looking at the chat, including a phone that did not start the machine. A stale URL shows “This preview is stopped.” and “Reload the game”. While `isPreparing` is true, the pane shows the starting screen instead of the iframe.
+
+Reload calls `ensure`. `ensureGameSandbox` replays the last successful commit from the thread (`finishedGameFromUiMessages`) onto the VM before Expo starts. A fresh template, or a disk still showing the holding sentence, is replaced by those files. A machine that already has the game is left as it is.
 
 ## Schema or shape
 
@@ -23,7 +25,7 @@ Game files live under `/template` inside the sandbox. Created with `persistent: 
 { chatId, previewUrl, execUrl, token, updatedAt } // index by_chat
 
 // getPreview client payload (previewForClient)
-{ previewUrl: string }
+{ previewUrl: string, live: boolean }
 ```
 
 ## Routes

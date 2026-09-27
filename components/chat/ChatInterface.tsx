@@ -10,9 +10,10 @@ import { CONFIG } from "../../convex/config";
 import { sandboxActionForPageEvent } from "../../lib/sandbox-page";
 import {
   nextPreviewEpoch,
+  previewFrameSrc,
+  previewPane,
   sandboxToStopOnSwitch,
   shouldEnsureSandboxOnReload,
-  shouldShowLivePreview,
 } from "../../lib/sandbox-lifecycle";
 import { ThemeToggle } from "../ui/ThemeToggle";
 import { MessageComponent } from "./MessageComponent";
@@ -79,17 +80,12 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   const isAiTurn = selectedChat?.isAiTurn || false;
   const isCurrentChatProcessing = isAiTurn || isSending;
   const [previewEpoch, setPreviewEpoch] = useState(0);
-  const [previewLiveChatId, setPreviewLiveChatId] = useState<Id<"chats"> | null>(null);
   const wasAiTurn = useRef(false);
 
   useEffect(() => {
     setPreviewEpoch((epoch) => nextPreviewEpoch(wasAiTurn.current, isAiTurn, epoch));
     wasAiTurn.current = isAiTurn;
   }, [isAiTurn]);
-
-  useEffect(() => {
-    setPreviewLiveChatId(null);
-  }, [selectedChatId]);
   
   type MessagePart = { type?: string; [key: string]: unknown };
   const hasCommitted = messages.some((msg) => 
@@ -188,7 +184,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
     setIsPreparing(true);
     try {
       await postSandbox(selectedChatId, "ensure");
-      setPreviewLiveChatId(selectedChatId);
+      setPreviewEpoch((epoch) => epoch + 1);
     } catch (error) {
       showToast(
         error instanceof Error ? error.message : "Could not reload the game.",
@@ -444,7 +440,6 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
       setIsPreparing(true);
       try {
         await postSandbox(chatId, "ensure");
-        setPreviewLiveChatId(chatId);
       } catch (error) {
         console.error("Failed to prepare sandbox:", error);
         showToast(
@@ -487,6 +482,15 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
       setIsSending(false);
     }
   };
+
+  const pane = previewPane({
+    hasChat: Boolean(selectedChatId),
+    hasMessages: messages.length > 0,
+    hasPreviewUrl: Boolean(preview?.previewUrl),
+    live: Boolean(preview?.live),
+    preparing: isPreparing,
+    previewKnown: preview !== undefined,
+  });
 
   return (
     <main className="relative flex flex-col h-[100dvh] md:h-screen bg-gradient-to-br from-[#FAFBFC] via-white to-[#F8F9FA] dark:from-[#1A202C] dark:via-[#1A202C] dark:to-[#2D3748] text-[#4A5568] dark:text-[#E2E8F0]">
@@ -801,24 +805,25 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
           mobileView === "preview" ? "flex flex-1" : "hidden md:flex md:h-full"
         }`}>
           <div className="relative flex-1 bg-gradient-to-br from-[#F0E6FA] via-[#FAFBFC] to-[#E8F4FC] dark:from-[#1A202C] dark:via-[#2D3748] dark:to-[#1A202C] p-0 md:p-6 flex items-center justify-center">
-            {shouldShowLivePreview({
-              hasPreviewUrl: Boolean(preview?.previewUrl),
-              startedThisVisit: previewLiveChatId === selectedChatId,
-              preparing: isPreparing,
-            }) && preview?.previewUrl ? (
+            {pane === "game" && preview?.previewUrl ? (
               <div className="w-full h-full rounded-3xl overflow-hidden border-2 border-[#E8F4FC] dark:border-[#4A5568] shadow-[0_8px_32px_rgba(168,212,230,0.2)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
                 <iframe
                   key={`${preview.previewUrl}-${previewEpoch}`}
-                  src={preview.previewUrl}
+                  src={previewFrameSrc(preview.previewUrl, previewEpoch)}
                   title="Game preview"
                   className="w-full h-full border-0 bg-[#F0E6FA] dark:bg-[#1A202C]"
                 />
               </div>
-            ) : isPreparing ? (
+            ) : pane === "starting" ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-8 gap-3.5">
                 <div className="text-6xl leading-none">🌳</div>
                 <div className="text-4xl font-bold tracking-tight leading-none text-[#7EB8D8] dark:text-[#A8D4E6]">Kayra</div>
                 <p className="m-0 max-w-[220px] text-[15px] leading-snug font-medium text-[#718096] dark:text-[#A0AEC0]">Starting your game</p>
+              </div>
+            ) : pane === "loading" ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-8 gap-3.5">
+                <div className="text-6xl leading-none">🌳</div>
+                <div className="text-4xl font-bold tracking-tight leading-none text-[#7EB8D8] dark:text-[#A8D4E6]">Kayra</div>
               </div>
             ) : (
               <div className="text-center">

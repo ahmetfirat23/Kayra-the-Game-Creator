@@ -146,24 +146,33 @@ describe("shouldRecreateStaleSandbox", () => {
 });
 
 describe("previewForClient", () => {
-  it("returns only previewUrl", () => {
+  it("returns previewUrl and whether the heartbeat is still fresh", () => {
     assert.deepEqual(
-      previewForClient({
-        previewUrl: "https://preview.example/app",
-      }),
-      { previewUrl: "https://preview.example/app" },
+      previewForClient(
+        {
+          previewUrl: "https://preview.example/app",
+          updatedAt: 1_000,
+        },
+        1_000,
+      ),
+      { previewUrl: "https://preview.example/app", live: true },
     );
   });
 
   it("strips command token and execUrl from the payload", () => {
-    const result = previewForClient({
-      previewUrl: "https://preview.example/app",
-      token: "secret-command-token",
-      execUrl: "https://sandbox.example/exec",
-    });
+    const result = previewForClient(
+      {
+        previewUrl: "https://preview.example/app",
+        token: "secret-command-token",
+        execUrl: "https://sandbox.example/exec",
+        updatedAt: 1_000,
+      },
+      61_000,
+    );
 
     assert.deepEqual(result, {
       previewUrl: "https://preview.example/app",
+      live: false,
     });
     assert.equal("token" in result, false);
     assert.equal("execUrl" in result, false);
@@ -171,25 +180,25 @@ describe("previewForClient", () => {
 });
 
 describe("shouldShowLivePreview", () => {
-  it("keeps a stored preview URL behind Reload until this visit starts it", () => {
+  it("shows the machine another screen already started", () => {
     assert.equal(
       shouldShowLivePreview({
         hasPreviewUrl: true,
-        startedThisVisit: false,
-        preparing: false,
-      }),
-      false,
-    );
-  });
-
-  it("shows the iframe after this visit starts the machine", () => {
-    assert.equal(
-      shouldShowLivePreview({
-        hasPreviewUrl: true,
-        startedThisVisit: true,
+        live: true,
         preparing: false,
       }),
       true,
+    );
+  });
+
+  it("keeps a stale preview URL behind Reload", () => {
+    assert.equal(
+      shouldShowLivePreview({
+        hasPreviewUrl: true,
+        live: false,
+        preparing: false,
+      }),
+      false,
     );
   });
 
@@ -197,7 +206,7 @@ describe("shouldShowLivePreview", () => {
     assert.equal(
       shouldShowLivePreview({
         hasPreviewUrl: true,
-        startedThisVisit: true,
+        live: true,
         preparing: true,
       }),
       false,

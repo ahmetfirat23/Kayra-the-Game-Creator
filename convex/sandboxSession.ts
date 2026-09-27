@@ -3,6 +3,8 @@
  * and the missing-session error used by processMessage.
  */
 
+import { previewForClient } from "../lib/sandbox-lifecycle.ts";
+
 export type SandboxSessionRow = {
     previewUrl: string;
     execUrl: string;
@@ -10,20 +12,7 @@ export type SandboxSessionRow = {
     updatedAt: number;
 };
 
-export type ClientPreview = {
-    previewUrl: string;
-};
-
-/** Client-safe preview payload: previewUrl only — never token or execUrl. */
-export function previewForClient(
-    session: Pick<SandboxSessionRow, "previewUrl"> & {
-        token?: string;
-        execUrl?: string;
-        [key: string]: unknown;
-    },
-): ClientPreview {
-    return { previewUrl: session.previewUrl };
-}
+export { previewForClient };
 
 /**
  * Error message when processMessage has no sandbox session.
