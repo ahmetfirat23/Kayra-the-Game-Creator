@@ -93,7 +93,7 @@ async function commandOk(sandbox: SandboxVm, shell: string): Promise<boolean> {
 async function installTemplate(sandbox: SandboxVm): Promise<void> {
   const installed = await commandOk(
     sandbox,
-    "test -d /template/node_modules/three && test -d /template/node_modules/expo-gl",
+    "test -d /template/node_modules/three && test -d /template/node_modules/@react-three/fiber && test -d /template/node_modules/expo-gl",
   );
   if (installed) return;
 
