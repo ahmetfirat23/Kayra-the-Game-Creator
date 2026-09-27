@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
-import { FreestyleDevServer } from "freestyle-sandboxes/react/dev-server";
-import { requestDevServer, downloadRepoAsZip } from "../../lib/freestyle-actions";
 import { UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { CONFIG } from "../../convex/config";
+import { sandboxActionForPageEvent } from "../../lib/sandbox-page";
 import { ThemeToggle } from "../ui/ThemeToggle";
 import { MessageComponent } from "./MessageComponent";
 import { ApiKeyModal, Toast, ConfirmDialog } from "../ui/Modals";
@@ -29,6 +28,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   const [showKey, setShowKey] = useState(false);
   const [savingKey, setSavingKey] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isPreparing, setIsPreparing] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "error" | "success" | "info" } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     message: string;
@@ -48,6 +48,11 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   
   const selectedChat = useQuery(
     api.chat.getChat,
+    selectedChatId ? { chatId: selectedChatId } : "skip"
+  );
+
+  const preview = useQuery(
+    api.chat.getPreview,
     selectedChatId ? { chatId: selectedChatId } : "skip"
   );
 
@@ -76,17 +81,6 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
     })
   );
   
-  const commitCount = messages.reduce((count, msg) => {
-    const parts = msg.parts as MessagePart[] | undefined;
-    if (!parts) return count;
-    const commits = parts.filter((part) => {
-      if (!part.type?.startsWith('tool-')) return false;
-      const toolName = part.type.replace('tool-', '');
-      return toolName.includes('commitAndPush');
-    });
-    return count + commits.length;
-  }, 0);
-  
   const sendMessage = useMutation(api.chat.sendMessage);
   const createChat = useMutation(api.chat.createChat);
 
@@ -94,6 +88,36 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   const hasRestoredChat = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [shownByokFallbackNotice, setShownByokFallbackNotice] = useState(false);
+
+  const postSandbox = useCallback(
+    async (chatId: Id<"chats">, action: "ensure" | "delete" | "download" | "heartbeat") => {
+      const response = await fetch("/api/sandbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, action }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          typeof payload.error === "string" ? payload.error : "Sandbox request failed",
+        );
+      }
+      return payload;
+    },
+    [],
+  );
+
+  const sendSandboxDeleteBeacon = useCallback((chatId: Id<"chats">, event: "pagehide" | "beforeunload" | "sign-out") => {
+    const action = sandboxActionForPageEvent(event);
+    if (!action) return;
+    const body = JSON.stringify({ chatId, action });
+    void fetch("/api/sandbox", {
+      method: "POST",
+      keepalive: true,
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+  }, []);
   
   useEffect(() => {
     if (messagesEndRef.current && messages.length > 0) {
@@ -109,6 +133,34 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   useEffect(() => {
     syncUser();
   }, [syncUser]);
+
+  useEffect(() => {
+    if (!selectedChatId) return;
+
+    const onPageHide = () => sendSandboxDeleteBeacon(selectedChatId, "pagehide");
+    const onBeforeUnload = () => sendSandboxDeleteBeacon(selectedChatId, "beforeunload");
+
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [selectedChatId, sendSandboxDeleteBeacon]);
+
+  useEffect(() => {
+    if (!selectedChatId) return;
+
+    const beat = () => {
+      void postSandbox(selectedChatId, "heartbeat").catch(() => {
+        // Heartbeat failures are non-fatal; the next ensure/heartbeat recovers.
+      });
+    };
+
+    beat();
+    const interval = window.setInterval(beat, 20_000);
+    return () => window.clearInterval(interval);
+  }, [selectedChatId, postSandbox]);
 
   useEffect(() => {
     if (chats.length > 0 && !selectedChatId && !hasRestoredChat.current) {
@@ -253,6 +305,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
       message: "Delete this game project? This cannot be undone.",
       onConfirm: async () => {
         try {
+          await postSandbox(chatId, "delete");
           await deleteChat({ chatId });
           if (selectedChatId === chatId) {
             setSelectedChatId(null);
@@ -267,17 +320,17 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   };
 
   const handleDownloadProject = async () => {
-    if (!selectedChat?.repoId || selectedChat.repoId === "pending") {
+    if (!selectedChatId) {
       showToast("Project is not ready yet", "error");
       return;
     }
 
     setIsDownloading(true);
     try {
-      const result = await downloadRepoAsZip({ repoId: selectedChat.repoId });
+      const result = await postSandbox(selectedChatId, "download");
       
       if (result.success && result.data) {
-        const cleanBase64 = result.data.replace(/[\s\r\n]+/g, '');
+        const cleanBase64 = String(result.data).replace(/[\s\r\n]+/g, '');
         const binaryString = atob(cleanBase64);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
@@ -288,7 +341,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = result.filename || 'game-project.zip';
+        a.download = result.filename || 'game-project.tar.gz';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -309,7 +362,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!input.trim() || isCurrentChatProcessing) {
+    if (!input.trim() || isCurrentChatProcessing || isPreparing) {
       return;
     }
     
@@ -328,7 +381,6 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
         try {
           chatId = await createChat();
           setSelectedChatId(chatId);
-          await new Promise(resolve => setTimeout(resolve, 500));
         } catch (error) {
           console.error("Failed to create chat:", error);
           showToast("Failed to create a new game project. Please try again.", "error");
@@ -336,11 +388,21 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
           return;
         }
       }
-      
-      if (selectedChat?.repoId === "pending") {
-        showToast("Repository is still being created. Please wait a moment...", "info");
+
+      setIsPreparing(true);
+      try {
+        await postSandbox(chatId, "ensure");
+      } catch (error) {
+        console.error("Failed to prepare sandbox:", error);
+        showToast(
+          error instanceof Error ? error.message : "Failed to start the game environment.",
+          "error",
+        );
+        setIsPreparing(false);
         setIsSending(false);
         return;
+      } finally {
+        setIsPreparing(false);
       }
       
       setInput("");
@@ -365,8 +427,6 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
           "No AI API key is configured for this app. Please contact the owner or add your own key in Settings.",
           "error",
         );
-      } else if (error instanceof Error && error.message.includes("Repository is still being created")) {
-        showToast("Repository is still being created. Please wait a moment and try again.", "info");
       } else {
         showToast("Failed to send message. Please try again.", "error");
       }
@@ -577,15 +637,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
         }`}>
           {/* Messages */}
           <div className="flex-1 p-4 md:p-6 overflow-y-auto overflow-x-hidden space-y-4 min-h-0">
-            {selectedChat?.repoId === "pending" ? (
-              <div className="text-center text-[#7EB8D8] dark:text-[#6BA8C8] mt-8 text-sm animate-pulse-soft">
-                <div className="text-3xl mb-3">⚙️</div>
-                <div className="font-medium text-[#4A5568] dark:text-[#E2E8F0]">Setting up your 3D game project...</div>
-                <div className="mt-2 text-xs text-[#A0AEC0]">
-                  Creating Git repository and dev server
-                </div>
-              </div>
-            ) : selectedChat && selectedChat.repoId && selectedChat.repoId !== "pending" ? (
+            {selectedChatId ? (
               messages && messages.length > 0 ? (
                 messages.map((msg, idx) => {
                   const nextMsg = messages[idx + 1];
@@ -632,22 +684,22 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
                   }
                 }}
                 placeholder={
-                  selectedChat?.repoId === "pending" 
-                    ? "Setting up..." 
+                  isPreparing
+                    ? "Starting your game environment..."
                     : (isCurrentChatProcessing || isSending)
                     ? "Working..." 
                     : "Describe your game..."
                 }
-                disabled={selectedChat?.repoId === "pending" || isCurrentChatProcessing || isSending}
+                disabled={isPreparing || isCurrentChatProcessing || isSending}
                 rows={1}
                 className="flex-1 bg-[#F8F9FA] dark:bg-[#1A202C] border border-[#E8F4FC] dark:border-[#4A5568] text-[#4A5568] dark:text-[#E2E8F0] rounded-2xl p-3 text-sm focus:outline-none focus:border-[#A8D4E6] dark:focus:border-[#6BA8C8] focus:ring-2 focus:ring-[#A8D4E6]/20 dark:focus:ring-[#6BA8C8]/20 disabled:opacity-50 disabled:cursor-not-allowed placeholder-[#A0AEC0] dark:placeholder-[#718096] resize-none overflow-y-auto overflow-x-hidden transition-all"
               />
               <button
                 type="submit"
-                disabled={selectedChat?.repoId === "pending" || isCurrentChatProcessing || isSending}
+                disabled={isPreparing || isCurrentChatProcessing || isSending}
                 className="bg-gradient-to-r from-[#A8D4E6] to-[#88C4D6] dark:from-[#6BA8C8] dark:to-[#5B98B8] hover:from-[#98C4D6] hover:to-[#78B4C6] disabled:from-[#E2E8F0] disabled:to-[#E2E8F0] dark:disabled:from-[#4A5568] dark:disabled:to-[#4A5568] disabled:cursor-not-allowed px-5 py-3 rounded-2xl font-bold text-sm text-white min-w-[70px] transition-all hover:shadow-md"
               >
-                {(isCurrentChatProcessing || isSending) ? (
+                {(isPreparing || isCurrentChatProcessing || isSending) ? (
                   <span className="dot-pulse">
                     <span></span>
                     <span></span>
@@ -666,27 +718,27 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
           mobileView === "preview" ? "flex flex-1" : "hidden md:flex md:h-full"
         }`}>
           <div className="flex-1 bg-gradient-to-br from-[#F8F9FA] to-[#E8F4FC] dark:from-[#1A202C] dark:to-[#2D3748] p-4 md:p-6 flex items-center justify-center">
-            {selectedChat?.repoId === "pending" ? (
+            {preview?.previewUrl ? (
+              <div className="w-full h-full rounded-3xl overflow-hidden border-2 border-[#E8F4FC] dark:border-[#4A5568] shadow-[0_8px_32px_rgba(168,212,230,0.2)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
+                <iframe
+                  src={preview.previewUrl}
+                  title="Game preview"
+                  className="w-full h-full border-0 bg-white"
+                />
+              </div>
+            ) : isPreparing ? (
               <div className="text-[#7EB8D8] dark:text-[#6BA8C8] text-center animate-pulse-soft">
                 <div className="text-5xl mb-4">⚙️</div>
-                <div className="text-base text-[#4A5568] dark:text-[#E2E8F0] font-medium">Setting up dev environment...</div>
+                <div className="text-base text-[#4A5568] dark:text-[#E2E8F0] font-medium">Starting your game environment...</div>
                 <div className="text-sm text-[#A0AEC0] dark:text-[#718096] mt-2">This may take 30-60 seconds</div>
-              </div>
-            ) : selectedChat?.repoId && hasCommitted ? (
-              <div className="w-full h-full rounded-3xl overflow-hidden border-2 border-[#E8F4FC] dark:border-[#4A5568] shadow-[0_8px_32px_rgba(168,212,230,0.2)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
-                <FreestyleDevServer 
-                  key={`${selectedChat.repoId}-${commitCount}`}
-                  actions={{ requestDevServer }} 
-                  repoId={selectedChat.repoId} 
-                />
               </div>
             ) : (
               <div className="text-[#A0AEC0] dark:text-[#718096] text-center">
                 <div className="text-5xl mb-4">🎮</div>
                 <div className="text-base">
-                  {selectedChat?.repoId && messages.length > 0
+                  {selectedChatId && messages.length > 0
                     ? "Kayra is designing your game..."
-                    : selectedChat?.repoId 
+                    : selectedChatId
                     ? "Describe your game idea to get started"
                     : "Start typing to create your first game"}
                 </div>

@@ -601,6 +601,47 @@ export const getSandboxAccess = query({
 });
 
 /**
+ * Owner clears sandbox rows for a chat without deleting the chat itself.
+ */
+export const clearSandbox = mutation({
+    args: {
+        chatId: v.id("chats"),
+    },
+    handler: async (ctx, args) => {
+        await authenticateAndVerifyChatOwnership(ctx, args.chatId);
+
+        const rows = await ctx.db
+            .query("sandboxes")
+            .withIndex("by_chat", (q) => q.eq("chatId", args.chatId))
+            .collect();
+        for (const row of rows) {
+            await ctx.db.delete(row._id);
+        }
+    },
+});
+
+/**
+ * Owner heartbeat: bump updatedAt on the sandbox row. No-op if none exists.
+ */
+export const touchSandbox = mutation({
+    args: {
+        chatId: v.id("chats"),
+    },
+    handler: async (ctx, args) => {
+        await authenticateAndVerifyChatOwnership(ctx, args.chatId);
+
+        const row = await ctx.db
+            .query("sandboxes")
+            .withIndex("by_chat", (q) => q.eq("chatId", args.chatId))
+            .first();
+        if (!row) {
+            return;
+        }
+        await ctx.db.patch(row._id, { updatedAt: Date.now() });
+    },
+});
+
+/**
  * Internal sandbox session for processMessage.
  */
 export const getSandboxSession = internalQuery({
