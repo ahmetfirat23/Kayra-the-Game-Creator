@@ -324,8 +324,10 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ previewUrl: ensured.previewUrl });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Sandbox request failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("Sandbox request failed:", error);
+    return NextResponse.json(
+      { error: "Game environment request failed. Please try again." },
+      { status: 500 },
+    );
   }
 }

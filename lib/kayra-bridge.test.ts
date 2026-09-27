@@ -202,7 +202,7 @@ describe("kayra-bridge refused commands", () => {
     assert.doesNotMatch(RESTART_SCRIPT_PATH, /expo/i);
     assert.match(script, /kayra-restart-preview\.log/);
     assert.match(script, /flock -n \/tmp\/kayra-expo\.lock/);
-    assert.equal(BRIDGE_HEALTH, "ok 15");
+    assert.equal(BRIDGE_HEALTH, "ok 16");
     assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
     assert.deepEqual(expoRestartOrder({}), []);
   });
@@ -227,6 +227,8 @@ describe("kayra-bridge refused commands", () => {
     assert.equal(compileErrorText(404, "missing file"), null);
     assert.equal(previewErrorText(500, "x not found", true), "x not found");
     assert.equal(previewErrorText(404, "missing file", false), null);
+    assert.match(previewErrorText(500, "<h1>Server Error</h1><pre>render failed</pre>", false, true) || "", /Preview document failed with HTTP 500/);
+    assert.equal(previewErrorText(404, "Not found", false, true), null);
     noteCompileError(error);
     assert.match(currentCompileError(), /SyntaxError/);
     const page = fixingPreviewPage();
