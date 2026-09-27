@@ -19,11 +19,11 @@ type Theme = 'light' | 'dark' | 'system';
 
 ## Preparing / reload spinner — React state
 
-`isPreparing` in `ChatInterface` is React state only. It covers the “Starting your game environment…” spinner around `POST /api/sandbox` `ensure` (send and “Reload the game”). It is not persisted.
+`isPreparing` in `ChatInterface` is React state only. It covers the “Starting your game” screen around `POST /api/sandbox` `ensure` (send and “Reload the game”). It is not persisted. `previewLiveChatId` is also React state: it remembers which chat this visit has started, so a stored preview URL does not open the iframe on its own.
 
 ## Preview URL — Convex row, not client storage
 
-`ChatInterface` reads `api.chat.getPreview`, which returns `{ previewUrl }` from the `sandboxes` table via `previewForClient`. The iframe `src` is that URL. Do not treat the preview address as `localStorage`.
+`ChatInterface` reads `api.chat.getPreview`, which returns `{ previewUrl }` from the `sandboxes` table via `previewForClient`. That URL becomes the iframe `src` only after this visit starts the machine. Do not treat the preview address as `localStorage`.
 
 ## Game files — not client state
 

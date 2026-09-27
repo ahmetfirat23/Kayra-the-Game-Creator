@@ -132,6 +132,8 @@ describe("kayra-bridge refused commands", () => {
     assert.match(page, /#F0E6FA/);
     assert.match(page, /#E8F4FC/);
     assert.match(page, /🌳/);
+    assert.match(page, /position:\s*fixed/);
+    assert.match(page, /inset:\s*0/);
   });
 
   it("touches the app layout after a write inside the tabs route", () => {
@@ -148,6 +150,6 @@ describe("kayra-bridge refused commands", () => {
     const script = expoRestartScript();
     assert.match(script, /max-old-space-size=1536/);
     assert.match(script, /pkill -f 'expo start'/);
-    assert.equal(BRIDGE_HEALTH, "ok 3");
+    assert.equal(BRIDGE_HEALTH, "ok 4");
   });
 });

@@ -13,7 +13,7 @@ Kayra later overwrites `index.tsx` with the real game.
 
 ## Shown from
 
-The preview iframe loads `previewUrl` (sandbox domain for port 3000). Non-tool requests go through `proxyToExpo`. While Expo is down, the bridge serves `previewWaitingPage()` — the Kayra lavender-to-blue screen with the tree and “Starting your game...”, auto-refresh. A write inside `app/(tabs)/` also touches `app/_layout.tsx`, because Metro does not notice that path. `git_commit_and_push` then restarts Expo (`KAYRA_RESTART_EXPO=1`, Node heap 1536) so the next preview load reads the game files. The chat pane remounts the iframe when `isAiTurn` goes false (`nextPreviewEpoch`). While Expo is down, the bridge serves the Kayra screen (tree, `#F0E6FA` to `#E8F4FC`) and refreshes. Health `ok 3` replaces an older bridge.
+The preview iframe loads `previewUrl` (sandbox domain for port 3000). Non-tool requests go through `proxyToExpo`. While Expo is down, the bridge serves `previewWaitingPage()` — the Kayra lavender-to-blue screen with the tree and “Starting your game...”, auto-refresh. A write inside `app/(tabs)/` also touches `app/_layout.tsx`, because Metro does not notice that path. `git_commit_and_push` then restarts Expo (`KAYRA_RESTART_EXPO=1`, Node heap 1536) so the next preview load reads the game files. The chat pane remounts the iframe when `isAiTurn` goes false (`nextPreviewEpoch`). While Expo is down, the bridge serves the Kayra screen (tree, `#F0E6FA` to `#E8F4FC`) and refreshes. The waiting page pins the tree, Kayra, and “Starting your game” with `position: fixed; inset: 0` so the line stays in the middle of the iframe. Health `ok 4` replaces an older bridge. A Vercel deploy does not rewrite a machine that is already running.
 
 ## Schema or shape
 

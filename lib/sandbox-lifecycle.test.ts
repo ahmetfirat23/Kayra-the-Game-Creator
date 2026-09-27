@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   nextPreviewEpoch,
   previewForClient,
+  shouldShowLivePreview,
   sandboxName,
   sandboxToStopOnSwitch,
   shouldDeleteSession,
@@ -166,6 +167,41 @@ describe("previewForClient", () => {
     });
     assert.equal("token" in result, false);
     assert.equal("execUrl" in result, false);
+  });
+});
+
+describe("shouldShowLivePreview", () => {
+  it("keeps a stored preview URL behind Reload until this visit starts it", () => {
+    assert.equal(
+      shouldShowLivePreview({
+        hasPreviewUrl: true,
+        startedThisVisit: false,
+        preparing: false,
+      }),
+      false,
+    );
+  });
+
+  it("shows the iframe after this visit starts the machine", () => {
+    assert.equal(
+      shouldShowLivePreview({
+        hasPreviewUrl: true,
+        startedThisVisit: true,
+        preparing: false,
+      }),
+      true,
+    );
+  });
+
+  it("keeps the starting screen up while the machine is still starting", () => {
+    assert.equal(
+      shouldShowLivePreview({
+        hasPreviewUrl: true,
+        startedThisVisit: true,
+        preparing: true,
+      }),
+      false,
+    );
   });
 });
 

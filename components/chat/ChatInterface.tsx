@@ -12,6 +12,7 @@ import {
   nextPreviewEpoch,
   sandboxToStopOnSwitch,
   shouldEnsureSandboxOnReload,
+  shouldShowLivePreview,
 } from "../../lib/sandbox-lifecycle";
 import { ThemeToggle } from "../ui/ThemeToggle";
 import { MessageComponent } from "./MessageComponent";
@@ -77,12 +78,17 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   const isAiTurn = selectedChat?.isAiTurn || false;
   const isCurrentChatProcessing = isAiTurn || isSending;
   const [previewEpoch, setPreviewEpoch] = useState(0);
+  const [previewLiveChatId, setPreviewLiveChatId] = useState<Id<"chats"> | null>(null);
   const wasAiTurn = useRef(false);
 
   useEffect(() => {
     setPreviewEpoch((epoch) => nextPreviewEpoch(wasAiTurn.current, isAiTurn, epoch));
     wasAiTurn.current = isAiTurn;
   }, [isAiTurn]);
+
+  useEffect(() => {
+    setPreviewLiveChatId(null);
+  }, [selectedChatId]);
   
   type MessagePart = { type?: string; [key: string]: unknown };
   const hasCommitted = messages.some((msg) => 
@@ -181,6 +187,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
     setIsPreparing(true);
     try {
       await postSandbox(selectedChatId, "ensure");
+      setPreviewLiveChatId(selectedChatId);
     } catch (error) {
       showToast(
         error instanceof Error ? error.message : "Could not reload the game.",
@@ -436,6 +443,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
       setIsPreparing(true);
       try {
         await postSandbox(chatId, "ensure");
+        setPreviewLiveChatId(chatId);
       } catch (error) {
         console.error("Failed to prepare sandbox:", error);
         showToast(
@@ -762,7 +770,11 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
           mobileView === "preview" ? "flex flex-1" : "hidden md:flex md:h-full"
         }`}>
           <div className="relative flex-1 bg-gradient-to-br from-[#F0E6FA] via-[#FAFBFC] to-[#E8F4FC] dark:from-[#1A202C] dark:via-[#2D3748] dark:to-[#1A202C] p-4 md:p-6 flex items-center justify-center">
-            {preview?.previewUrl ? (
+            {shouldShowLivePreview({
+              hasPreviewUrl: Boolean(preview?.previewUrl),
+              startedThisVisit: previewLiveChatId === selectedChatId,
+              preparing: isPreparing,
+            }) && preview?.previewUrl ? (
               <div className="w-full h-full rounded-3xl overflow-hidden border-2 border-[#E8F4FC] dark:border-[#4A5568] shadow-[0_8px_32px_rgba(168,212,230,0.2)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
                 <iframe
                   key={`${preview.previewUrl}-${previewEpoch}`}

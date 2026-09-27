@@ -62,6 +62,21 @@ export function shouldEnsureSandboxOnReload(isAiTurn: boolean): boolean {
   return !isAiTurn;
 }
 
+/**
+ * A stored preview URL is the last machine, not a running game.
+ * The iframe is shown only after this visit starts it (Reload or send).
+ * While that start is in progress, keep the starting screen up instead.
+ */
+export function shouldShowLivePreview(input: {
+  hasPreviewUrl: boolean;
+  startedThisVisit: boolean;
+  preparing: boolean;
+}): boolean {
+  if (input.preparing) return false;
+  if (!input.startedThisVisit) return false;
+  return input.hasPreviewUrl;
+}
+
 /** Bump when a reply finishes so the preview iframe loads the files Kayra just wrote. */
 export function nextPreviewEpoch(
   wasAiTurn: boolean,

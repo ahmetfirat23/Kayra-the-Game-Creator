@@ -14,7 +14,7 @@ Game files live under `/template` inside the sandbox. Created with `persistent: 
 
 ## Shown from
 
-`ChatInterface` queries `api.chat.getPreview` and sets the iframe `src` to `preview.previewUrl`. While `isPreparing` is true and there is no URL, it shows the preparing spinner. With messages but no URL, it shows “Reload the game”.
+`ChatInterface` queries `api.chat.getPreview`. The iframe is mounted only after this visit calls `ensure` (Reload or send), via `shouldShowLivePreview`. A stored `previewUrl` on its own shows “This preview is stopped.” and “Reload the game”. While `isPreparing` is true, the pane shows the starting screen instead of the iframe.
 
 ## Schema or shape
 
