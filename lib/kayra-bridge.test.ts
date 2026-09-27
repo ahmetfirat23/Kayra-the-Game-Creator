@@ -17,6 +17,7 @@ import {
   noteCompileError,
   previewResponseHeaders,
   previewWaitingPage,
+  RESTART_SCRIPT_PATH,
   refusedShell,
 } from "./kayra-bridge.mjs";
 
@@ -160,7 +161,8 @@ describe("kayra-bridge refused commands", () => {
     assert.match(script, /--clear/);
     assert.match(script, /rm -rf \/template\/\.expo/);
     assert.match(script, /node_modules\/\.cache/);
-    assert.equal(BRIDGE_HEALTH, "ok 8");
+    assert.doesNotMatch(RESTART_SCRIPT_PATH, /expo/i);
+    assert.equal(BRIDGE_HEALTH, "ok 9");
     assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
     assert.deepEqual(expoRestartOrder({}), []);
   });
