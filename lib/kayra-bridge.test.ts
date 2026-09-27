@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { brotliCompressSync, gzipSync } from "node:zlib";
 import { describe, it } from "node:test";
 import {
   BRIDGE_HEALTH,
@@ -14,6 +15,7 @@ import {
   fileExcerpt,
   searchCode,
   compileErrorText,
+  decodePreviewErrorBody,
   currentCompileError,
   fixingPreviewPage,
   noteCompileError,
@@ -202,7 +204,7 @@ describe("kayra-bridge refused commands", () => {
     assert.doesNotMatch(RESTART_SCRIPT_PATH, /expo/i);
     assert.match(script, /kayra-restart-preview\.log/);
     assert.match(script, /flock -n \/tmp\/kayra-expo\.lock/);
-    assert.equal(BRIDGE_HEALTH, "ok 16");
+    assert.equal(BRIDGE_HEALTH, "ok 17");
     assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
     assert.deepEqual(expoRestartOrder({}), []);
   });
@@ -234,5 +236,15 @@ describe("kayra-bridge refused commands", () => {
     const page = fixingPreviewPage();
     assert.match(page, /Kayra is fixing your game/);
     assert.doesNotMatch(page, /SyntaxError/);
+  });
+
+  it("decodes compressed Expo errors without sending binary text to the agent", () => {
+    const html = "<h1>Server Error</h1><pre>render failed</pre>";
+    assert.equal(decodePreviewErrorBody(gzipSync(html), "gzip"), html);
+    assert.equal(decodePreviewErrorBody(brotliCompressSync(html), "br"), html);
+    assert.equal(decodePreviewErrorBody(gzipSync(html), undefined), html);
+    assert.equal(decodePreviewErrorBody(Buffer.from([0xff, 0x00, 0xfe]), "identity"), "");
+    assert.equal(decodePreviewErrorBody(Buffer.from("bad gzip"), "gzip"), "");
+    assert.equal(previewErrorText(500, "", false, true), "Preview document failed with HTTP 500.");
   });
 });
