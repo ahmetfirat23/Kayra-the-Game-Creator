@@ -28,5 +28,5 @@ export const CONFIG = {
   FREE_TIER_DAILY_TOKEN_CAP: 1_000_000,
 
   // Model settings
-  LANGUAGE_MODEL: "gpt-5-mini"
+  LANGUAGE_MODEL: "gpt-5.6-luna"
 } as const;

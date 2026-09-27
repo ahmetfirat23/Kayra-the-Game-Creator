@@ -27,6 +27,12 @@ A running sandbox spends the memory allowance the whole time it is up. An idle E
 - If no heartbeat arrives for 60 seconds, the next `ensure` or a scheduled check deletes the sandbox.
 - The preview query returns `previewUrl` and never `token` or `execUrl`.
 
+## Model
+
+`convex/config.ts` `LANGUAGE_MODEL` is `gpt-5.6-luna`.
+
+That is the current cost-sensitive GPT model: $0.20 per 1M input tokens and $1.20 per 1M output tokens. `gpt-5-mini` is $0.25 / $2.00. Do not switch to `gpt-5.4-mini` ($0.75 / $4.50) or `gpt-5.6-terra` ($2 / $12).
+
 ## Chunks
 
 1. Lifecycle rules in `lib/sandbox-lifecycle.ts`, with `node:test` covering delete-on-leave, the 60-second leftover cutoff, a heartbeat that keeps the session, and a preview payload that refuses to include the command token.
@@ -34,6 +40,7 @@ A running sandbox spends the memory allowance the whole time it is up. An idle E
 3. Convex `sandboxes` table, `registerSandbox`, `getPreview`, `getSandboxSession`. `processMessage` uses the bridge client. `createChat` stores `repoId: "sandbox"` and does not call Freestyle. Tests cover a missing session (the send is refused with a retryable error) and `getPreview` dropping the token.
 4. Route, chat send, iframe, heartbeat, and `pagehide` delete. Browser check: the preview request is same-origin, and leaving the page issues `delete`.
 5. `docs/sandbox-preview.md` in the code-map voice, after the code is on the branch.
+6. Set `LANGUAGE_MODEL` to `gpt-5.6-luna`. A test asserts that value and rejects `gpt-5-mini`, `gpt-5.4-mini`, and `gpt-5.6-terra`.
 
 ## Checks
 
