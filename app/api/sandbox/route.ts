@@ -51,9 +51,9 @@ async function committedGame(
   try {
     snapshot = await convex.query(api.gameSnapshots.get, { chatId });
   } catch (error) {
-    // Vercel may deploy before the matching Convex function. Keep existing
-    // games loadable until the backend deployment catches up.
-    if (!/gameSnapshots:get/i.test(String(error)) || !/not found|could not find|not registered/i.test(String(error))) throw error;
+    // Convex can return a generic Server Error while a matching function is
+    // still deploying. Replay the existing thread instead of blocking chat.
+    console.warn("Game snapshot unavailable; replaying chat history:", error);
   }
   const messages: Array<{ parts?: unknown }> = [];
   let cursor: string | null = null;
