@@ -63,18 +63,19 @@ export function MessageComponent({ message, showTokens = true }: { message: UIMe
       
       {/* Display text content with markdown formatting */}
       {visibleText && (
-        <div className="mb-2 prose prose-sm max-w-none">
+        <div className="mb-2 max-w-none">
           <ReactMarkdown
             components={{
-              p: ({ children }) => <p className={`mb-2 leading-relaxed ${isUser ? 'text-white' : 'text-[#4A5568] dark:text-[#E2E8F0]'}`}>{children}</p>,
+              p: ({ children }) => <p className={`mb-2 last:mb-0 leading-relaxed ${isUser ? 'text-white' : 'text-[#4A5568] dark:text-[#E2E8F0]'}`}>{children}</p>,
               strong: ({ children }) => <strong className={`font-bold ${isUser ? 'text-white' : 'text-[#2D3748] dark:text-white'}`}>{children}</strong>,
               em: ({ children }) => <em className={`italic ${isUser ? 'text-white/90' : 'text-[#4A5568] dark:text-[#A0AEC0]'}`}>{children}</em>,
+              a: ({ href, children }) => <a href={href} className={`underline ${isUser ? 'text-white' : 'text-[#6BA8C8] dark:text-[#A8D4E6]'}`} target="_blank" rel="noreferrer">{children}</a>,
               h1: ({ children }) => <h1 className={`text-xl font-bold mb-2 mt-3 ${isUser ? 'text-white' : 'text-[#2D3748] dark:text-white'}`}>{children}</h1>,
               h2: ({ children }) => <h2 className={`text-lg font-bold mb-2 mt-3 ${isUser ? 'text-white' : 'text-[#2D3748] dark:text-white'}`}>{children}</h2>,
               h3: ({ children }) => <h3 className={`text-base font-bold mb-2 mt-2 ${isUser ? 'text-white' : 'text-[#2D3748] dark:text-white'}`}>{children}</h3>,
-              ul: ({ children }) => <ul className={`list-disc list-inside mb-2 space-y-1 ${isUser ? 'text-white' : 'text-[#4A5568] dark:text-[#E2E8F0]'}`}>{children}</ul>,
-              ol: ({ children }) => <ol className={`list-decimal list-inside mb-2 space-y-1 ${isUser ? 'text-white' : 'text-[#4A5568] dark:text-[#E2E8F0]'}`}>{children}</ol>,
-              li: ({ children }) => <li className="ml-2">{children}</li>,
+              ul: ({ children }) => <ul className={`list-disc pl-5 mb-2 space-y-1 ${isUser ? 'text-white' : 'text-[#4A5568] dark:text-[#E2E8F0]'}`}>{children}</ul>,
+              ol: ({ children }) => <ol className={`list-decimal pl-5 mb-2 space-y-1 ${isUser ? 'text-white' : 'text-[#4A5568] dark:text-[#E2E8F0]'}`}>{children}</ol>,
+              li: ({ children }) => <li className="leading-relaxed [&>p]:inline [&>p]:m-0">{children}</li>,
               code: ({ children }) => <code className={`px-1.5 py-0.5 rounded-lg text-sm ${isUser ? 'bg-white/20 text-white' : 'bg-[#F0E6FA] dark:bg-[#4A5568] text-[#8B7EC8] dark:text-[#D4B8E8]'}`}>{children}</code>,
               pre: ({ children }) => <pre className={`p-3 rounded-xl overflow-x-auto mb-2 ${isUser ? 'bg-white/20 text-white' : 'bg-[#F8F9FA] dark:bg-[#1A202C] text-[#4A5568] dark:text-[#E2E8F0]'}`}>{children}</pre>,
               blockquote: ({ children }) => <blockquote className={`border-l-4 pl-3 italic my-2 ${isUser ? 'border-white/50 text-white/90' : 'border-[#D4B8E8] dark:border-[#A888C8] text-[#718096] dark:text-[#A0AEC0]'}`}>{children}</blockquote>,
