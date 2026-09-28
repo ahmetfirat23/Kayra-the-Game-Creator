@@ -960,7 +960,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
         </div>
 
         {/* Preview Panel */}
-        <div className={`w-full md:w-1/2 md:flex-none flex flex-col overflow-hidden ${
+        <div className={`w-full md:w-1/2 md:flex-none flex flex-col overflow-hidden select-none ${
           mobileView === "preview" ? "flex flex-1" : "hidden md:flex md:h-full"
         }`}>
           <div className="relative flex-1 bg-gradient-to-br from-[#F0E6FA] via-[#FAFBFC] to-[#E8F4FC] dark:from-[#1A202C] dark:via-[#2D3748] dark:to-[#1A202C] p-0 md:p-6 flex items-center justify-center">
@@ -970,7 +970,7 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
                   key={`${preview.previewUrl}-${previewEpoch}`}
                   src={previewFrameSrc(preview.previewUrl, previewEpoch)}
                   title="Game preview"
-                  className="w-full h-full border-0 bg-[#F0E6FA] dark:bg-[#1A202C]"
+                  className="w-full h-full border-0 bg-[#F0E6FA] dark:bg-[#1A202C] select-none"
                   onLoad={() => setLoadingPreviewChatId((current) => current === selectedChatId ? null : current)}
                 />
                 {progressStage && (

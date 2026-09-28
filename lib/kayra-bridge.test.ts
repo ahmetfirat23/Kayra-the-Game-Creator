@@ -20,6 +20,8 @@ import {
   currentCompileError,
   fixingPreviewPage,
   noteCompileError,
+  injectPreviewPlayStyles,
+  previewDocumentHeaders,
   previewResponseHeaders,
   previewErrorText,
   isExpoCorsError,
@@ -206,9 +208,26 @@ describe("kayra-bridge refused commands", () => {
     assert.doesNotMatch(RESTART_SCRIPT_PATH, /expo/i);
     assert.match(script, /kayra-restart-preview\.log/);
     assert.match(script, /flock -n \/tmp\/kayra-expo\.lock/);
-    assert.equal(BRIDGE_HEALTH, "ok 18");
+    assert.equal(BRIDGE_HEALTH, "ok 19");
     assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
     assert.deepEqual(expoRestartOrder({}), []);
+  });
+
+  it("stops text selection in the game document", () => {
+    const html = injectPreviewPlayStyles("<!doctype html><html><head><title>Game</title></head><body>Score</body></html>");
+    assert.match(html, /<head><style data-kayra-play="1">/);
+    assert.match(html, /user-select:\s*none !important/);
+    assert.match(html, /input, textarea/);
+    assert.match(html, /selectstart/);
+    assert.equal(injectPreviewPlayStyles(html), html);
+    const headers = previewDocumentHeaders({
+      "Content-Type": "text/html",
+      "Content-Length": "12",
+      "Content-Encoding": "gzip",
+    });
+    assert.equal(headers["Content-Type"], "text/html");
+    assert.equal("Content-Length" in headers, false);
+    assert.equal("Content-Encoding" in headers, false);
   });
 
   it("does not let the browser keep the previous bundle", () => {
