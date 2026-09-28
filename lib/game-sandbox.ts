@@ -122,37 +122,93 @@ function shellQuote(value: string): string {
 export const HOLDING_SENTENCE =
   "Kayra is building your game. When it's done, it will show here.";
 
-async function installTemplate(sandbox: SandboxVm): Promise<boolean> {
-  const installed = await commandOk(
-    sandbox,
-    "test -d /template/node_modules/three && test -d /template/node_modules/@react-three/fiber && test -d /template/node_modules/expo-gl",
+/** Directory presence is not enough: a failed extract can leave package.json without its entry. */
+export const TEMPLATE_READY_SHELL =
+  "test -d /template/node_modules/three && test -d /template/node_modules/@react-three/fiber && test -d /template/node_modules/expo-gl && test -f /template/node_modules/expo-modules-core/src/index.ts";
+
+const BASE_PACKAGES = [
+  "three",
+  "@react-three/fiber",
+  "@react-three/drei",
+  "@react-three/rapier",
+  "zustand",
+  "@use-gesture/react",
+  "expo-gl",
+  "expo-av",
+  "expo-haptics",
+];
+
+function installFailureText(stderr: string, stdout: string): string {
+  const text = [stderr, stdout].filter(Boolean).join("\n").trim();
+  const errors = text.split("\n").filter((line) => /npm error|ERR!/i.test(line));
+  const useful = errors.length > 0 ? errors.join("\n") : text;
+  return useful.slice(-700);
+}
+
+export function templateInstallShell(): string {
+  const body = [
+    'if [ ! -w /template ] 2>/dev/null; then sudo mkdir -p /template /opt && sudo chown -R "$(id -un)" /template /opt; fi',
+    "mkdir -p /template /opt",
+    `if [ ! -f /template/package.json ]; then git clone --depth 1 ${TEMPLATE_REPO} /template; fi`,
+    `if ${TEMPLATE_READY_SHELL}; then exit 0; fi`,
+    "cd /template",
+    "if [ -d node_modules ] && [ ! -f node_modules/expo-modules-core/src/index.ts ]; then rm -rf node_modules; fi",
+    "npm install three @react-three/fiber @react-three/drei @react-three/rapier zustand @use-gesture/react",
+    "CI=1 npx expo install expo-gl expo-av expo-haptics",
+  ].join(" && ");
+  const locked = `flock -w 170 /tmp/kayra-template.lock bash -lc ${shellQuote(body)}`;
+  return `if command -v flock >/dev/null 2>&1; then ${locked}; else bash -lc ${shellQuote(body)}; fi`;
+}
+
+/** Reinstall packages the agent added, when this machine does not have them yet. */
+export function extraPackageInstallShell(packages: string[] | undefined): string | null {
+  const extras = [...new Set(packages ?? [])].filter(
+    (pkg) => /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i.test(pkg) && !BASE_PACKAGES.includes(pkg),
   );
+  if (extras.length === 0) return null;
+  const list = extras.map(shellQuote).join(" ");
+  return [
+    "cd /template",
+    `needed=""`,
+    `for pkg in ${list}; do if [ ! -e "node_modules/$pkg" ]; then needed="$needed $pkg"; fi; done`,
+    `if [ -n "$needed" ]; then npm install $needed && echo kayra-installed-packages; fi`,
+  ].join(" && ");
+}
+
+async function installTemplate(sandbox: SandboxVm): Promise<boolean> {
+  const installed = await commandOk(sandbox, TEMPLATE_READY_SHELL);
   if (installed) return false;
 
-  const prepare = await sandbox.runCommand(
-    "bash",
-    [
-      "-lc",
-      [
-        'if [ ! -w /template ] 2>/dev/null; then sudo mkdir -p /template /opt && sudo chown -R "$(id -un)" /template /opt; fi',
-        "mkdir -p /template /opt",
-        `if [ ! -f /template/package.json ]; then git clone --depth 1 ${TEMPLATE_REPO} /template; fi`,
-        "cd /template && npm install three @react-three/fiber @react-three/drei @react-three/rapier zustand @use-gesture/react",
-        "cd /template && CI=1 npx expo install expo-gl expo-av expo-haptics",
-      ].join(" && "),
-    ],
+  const prepare = await sandbox.runCommand("bash", ["-lc", templateInstallShell()], {
     // The ensure route ends at 300s, and sandbox startup still has to fit after this.
-    { timeoutMs: 200_000 },
-  );
+    timeoutMs: 200_000,
+  });
 
   if (prepare.exitCode !== 0) {
     const stderr = await prepare.stderr();
     const stdout = await prepare.stdout();
     throw new Error(
-      `Could not prepare the game template. ${stderr || stdout}`.slice(0, 700),
+      `Could not prepare the game template. ${installFailureText(stderr, stdout)}`,
     );
   }
   return true;
+}
+
+async function installGamePackages(
+  sandbox: SandboxVm,
+  packages: string[] | undefined,
+): Promise<boolean> {
+  const shell = extraPackageInstallShell(packages);
+  if (!shell) return false;
+  const result = await sandbox.runCommand("bash", ["-lc", shell], { timeoutMs: 180_000 });
+  const stdout = await result.stdout();
+  if (result.exitCode !== 0) {
+    const stderr = await result.stderr();
+    throw new Error(
+      `Could not install game dependencies. ${installFailureText(stderr, stdout)}`,
+    );
+  }
+  return stdout.includes("kayra-installed-packages");
 }
 
 /** Quiet first screen until Kayra overwrites `/template/app/(tabs)/index.tsx`. */
@@ -473,6 +529,11 @@ export async function ensureGameSandbox(
 
   if (shouldRestore && game) {
     await restoreFinishedGame(sandbox, game);
+  }
+
+  const extrasInstalled = await installGamePackages(sandbox, game?.packages);
+  if (extrasInstalled) {
+    await stopExpo(sandbox);
   }
 
   const newToken = !existingToken;

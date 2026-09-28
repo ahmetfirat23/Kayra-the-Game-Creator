@@ -12,6 +12,8 @@ export type TextEdit = {
 export type FinishedGame = {
   files: Array<{ path: string; content: string }>;
   diskEdits: Array<{ path: string; edits: TextEdit[] }>;
+  /** Packages the agent installed before the last successful commit. */
+  packages?: string[];
 };
 
 const GAME_SCREEN = "/template/app/(tabs)/index.tsx";
@@ -183,6 +185,27 @@ function isEdit(name: string): boolean {
   return name === "editFiles" || name === "edit_file";
 }
 
+function isInstall(name: string): boolean {
+  return name === "npmInstall" || name === "npm_install";
+}
+
+const PACKAGE_NAME = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i;
+
+function packageNames(input: unknown): string[] {
+  const record = asRecord(input);
+  if (!record || !Array.isArray(record.packages)) return [];
+  const names: string[] = [];
+  for (const pkg of record.packages) {
+    if (typeof pkg !== "string" || !PACKAGE_NAME.test(pkg)) continue;
+    names.push(pkg);
+  }
+  return names;
+}
+
+function installSucceeded(part: ToolPart): boolean {
+  return !/^Error running npm install/i.test(outputText(part.output));
+}
+
 /** Replay settled tool parts up to the last successful commit. */
 export function finishedGameFromParts(parts: unknown[]): FinishedGame | null {
   const tools = parts.filter((part): part is ToolPart => {
@@ -196,11 +219,17 @@ export function finishedGameFromParts(parts: unknown[]): FinishedGame | null {
 
   const known = new Map<string, string>();
   const pending = new Map<string, TextEdit[]>();
+  const packages = new Set<string>();
 
   for (const part of tools.slice(0, commitIndex)) {
     const name = toolName(part);
     if (!name || !callSettled(part)) continue;
     const input = part.input ?? part.args;
+    if (isInstall(name)) {
+      if (!installSucceeded(part)) continue;
+      for (const pkg of packageNames(input)) packages.add(pkg);
+      continue;
+    }
     if (isWrite(name)) {
       const failed = failedWritePaths(part.output);
       for (const file of writtenFiles(input)) {
@@ -224,10 +253,11 @@ export function finishedGameFromParts(parts: unknown[]): FinishedGame | null {
     }
   }
 
-  if (known.size === 0 && pending.size === 0) return null;
+  if (known.size === 0 && pending.size === 0 && packages.size === 0) return null;
   return {
     files: [...known].map(([path, content]) => ({ path, content })),
     diskEdits: [...pending].map(([path, edits]) => ({ path, edits })),
+    packages: [...packages],
   };
 }
 

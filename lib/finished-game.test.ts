@@ -208,6 +208,38 @@ describe("successfulCommitCountFromUiMessages", () => {
   });
 });
 
+describe("finishedGameFromUiMessages packages", () => {
+  it("keeps packages the agent installed before the last commit", () => {
+    const game = finishedGameFromUiMessages([
+      {
+        parts: [
+          {
+            type: "tool-npmInstall",
+            state: "output-available",
+            input: { packages: ["howler", "three; rm -rf /", "expo-av"] },
+            output: "added howler",
+          },
+          writePart([{ path: SCREEN, content: "game" }]),
+          {
+            type: "tool-npmInstall",
+            state: "output-available",
+            input: { packages: ["broken-pkg"] },
+            output: "Error running npm install: not found",
+          },
+          commitPart(),
+          {
+            type: "tool-npmInstall",
+            state: "output-available",
+            input: { packages: ["after-commit"] },
+            output: "added",
+          },
+        ],
+      },
+    ]);
+    assert.deepEqual(game?.packages, ["howler", "expo-av"]);
+  });
+});
+
 describe("applyTextEdits", () => {
   it("replaces the first matching span and skips a missing one", () => {
     assert.equal(

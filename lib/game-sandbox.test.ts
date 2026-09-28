@@ -150,7 +150,7 @@ describe("ensureGameSandbox", () => {
               assert.ok(timeout <= 200_000);
               assert.ok(timeout >= 120_000);
             }
-            const missingLibs = shell.includes("node_modules/three");
+            const missingLibs = shell.includes("node_modules/three") && !shell.includes("npm install");
             return {
               exitCode: missingLibs ? 1 : 0,
               stdout: async () => "",
@@ -165,8 +165,44 @@ describe("ensureGameSandbox", () => {
     const install = shells.join("\n");
     assert.match(install, /npm install three @react-three\/fiber @react-three\/drei @react-three\/rapier zustand @use-gesture\/react/);
     assert.match(install, /npx expo install expo-gl expo-av expo-haptics/);
+    assert.match(install, /expo-modules-core\/src\/index\.ts/);
+    assert.match(install, /rm -rf node_modules/);
+    assert.match(install, /flock -w 170 \/tmp\/kayra-template\.lock/);
     assert.match(install, /fuser -k 19006\/tcp/);
     assert.match(install, /pkill -f '\[e\]xpo'/);
+  });
+
+  it("installs packages the agent added when this machine does not have them", async () => {
+    const shells: string[] = [];
+    const fake = createFakeClient({
+      getOrCreate: async () =>
+        createFakeVm({
+          runCommand: async (command, args) => {
+            const shell = Array.isArray(args) ? args.join(" ") : "";
+            if (typeof command === "string") shells.push(shell);
+            const missingLibs = shell.includes("node_modules/three") && !shell.includes("npm install");
+            return {
+              exitCode: missingLibs ? 1 : 0,
+              stdout: async () => "",
+              stderr: async () => "",
+            };
+          },
+        }),
+    });
+
+    await ensureGameSandbox("chat-abc", {
+      client: fake.client,
+      game: {
+        files: [{ path: "/template/app/(tabs)/index.tsx", content: "game" }],
+        diskEdits: [],
+        packages: ["howler", "three", "not a package"],
+      },
+    });
+
+    const install = shells.join("\n");
+    assert.match(install, /npm install \$needed/);
+    assert.match(install, /howler/);
+    assert.doesNotMatch(install, /npm install \$needed && echo kayra-installed-packages[\s\S]*three/);
   });
 
   it("writes a holding page over the Expo starter before Expo serves", async () => {
@@ -179,7 +215,9 @@ describe("ensureGameSandbox", () => {
             const shell = Array.isArray(args) ? args.join(" ") : "";
             shells.push(shell);
             const missingLibs =
-              typeof command === "string" && shell.includes("node_modules/three");
+              typeof command === "string" &&
+              shell.includes("node_modules/three") &&
+              !shell.includes("npm install");
             return {
               exitCode: missingLibs ? 1 : 0,
               stdout: async () => "",
@@ -231,7 +269,7 @@ describe("ensureGameSandbox", () => {
             const described =
               typeof command === "string" ? shell : JSON.stringify(command);
             if (described.includes("npx expo start")) order.push("expo");
-            const missingLibs = shell.includes("node_modules/three");
+            const missingLibs = shell.includes("node_modules/three") && !shell.includes("npm install");
             const expoDown = shell.includes("19006");
             return {
               exitCode: missingLibs || expoDown ? 1 : 0,
@@ -282,7 +320,7 @@ describe("ensureGameSandbox", () => {
         runCommand: async (command, args) => {
           const shell = typeof command === "string" ? (args ?? []).join(" ") : "";
           shells.push(shell);
-          return { exitCode: shell.includes("node_modules/three") ? 1 : 0, stdout: async () => "", stderr: async () => "" };
+          return { exitCode: shell.includes("node_modules/three") && !shell.includes("npm install") ? 1 : 0, stdout: async () => "", stderr: async () => "" };
         },
         writeFiles: async (files) => {
           for (const file of files) written.push({ path: file.path, content: String(file.content) });

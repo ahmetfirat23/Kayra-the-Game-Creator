@@ -61,7 +61,7 @@ describe("reload of a finished game", () => {
         const shell = Array.isArray(args) ? args.join(" ") : "";
         const described = typeof command === "string" ? shell : JSON.stringify(command);
         if (described.includes("npx expo start")) order.push(described);
-        const missingLibs = shell.includes("node_modules/three");
+        const missingLibs = shell.includes("node_modules/three") && !shell.includes("npm install");
         const expoDown = shell.includes("19006");
         return {
           exitCode: missingLibs || expoDown ? 1 : 0,
