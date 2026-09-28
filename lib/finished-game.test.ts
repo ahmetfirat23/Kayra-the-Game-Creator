@@ -182,6 +182,19 @@ describe("finishedGameFromUiMessages", () => {
     assert.equal(includesGameScreen(game), false);
   });
 
+  it("keeps separate edits on a template file as separate atomic calls", () => {
+    const path = "/template/app/_layout.tsx";
+    const edit = (oldText: string, newText: string) => ({
+      type: "tool-editFiles",
+      state: "output-available",
+      input: { files: [{ path, edits: [{ oldText, newText }] }] },
+      output: { _multiFileEdit: true, files: [{ path, success: true }] },
+    });
+    const game = finishedGameFromUiMessages([{ parts: [edit("A", "B"), edit("missing", "C"), commitPart()] }]);
+    assert.equal(game?.diskEdits.length, 2);
+    assert.equal(applyTextEdits(applyTextEdits("A", game!.diskEdits[0].edits), game!.diskEdits[1].edits), "B");
+  });
+
   it("drops paths outside the template and failed writes", () => {
     const game = finishedGameFromUiMessages([
       {
@@ -286,13 +299,13 @@ describe("finishedGameFromUiMessages packages", () => {
 });
 
 describe("applyTextEdits", () => {
-  it("replaces the first matching span and skips a missing one", () => {
+  it("does not apply a partial edit when a later oldText is missing", () => {
     assert.equal(
       applyTextEdits("aaa", [
         { oldText: "a", newText: "b" },
         { oldText: "missing", newText: "x" },
       ]),
-      "baa",
+      "aaa",
     );
   });
 });

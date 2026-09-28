@@ -255,6 +255,10 @@ class ToolCallTracker {
     hasUncommittedChanges(): boolean {
         return this.hasFileModifications && !this.hasCommitted;
     }
+
+    didCommit(): boolean {
+        return this.hasCommitted;
+    }
     
     recordCommit(): void {
         this.hasCommitted = true;

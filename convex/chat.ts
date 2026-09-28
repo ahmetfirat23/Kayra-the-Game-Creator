@@ -457,6 +457,16 @@ export const processMessage = internalAction({
             
             const tracker = getToolCallTracker();
             const { text: textToSave, committed } = await autoCommitIfNeeded(mcpClient, tracker, finalText);
+            if (tracker.didCommit() || committed) {
+                const result = await mcpClient.callTool({ name: "snapshot_game", arguments: {} });
+                const raw = result.content?.[0]?.text;
+                const snapshot = JSON.parse(raw || "null") as { files?: Array<{ path: string; content: string }> } | null;
+                if (!snapshot || !Array.isArray(snapshot.files) ||
+                    snapshot.files.some(file => typeof file.path !== "string" || typeof file.content !== "string")) {
+                    throw new Error("Could not save the committed game files.");
+                }
+                await ctx.runMutation(internal.gameSnapshots.save, { chatId: args.chatId, files: snapshot.files });
+            }
             if (committed) {
                 const autoCommitLine = textToSave.split("\n").find((line) => line.startsWith("Auto-commit: "));
                 await agent.saveMessage(ctx, {
@@ -813,6 +823,12 @@ export const deleteChat = mutation({
         for (const row of sandboxRows) {
             await ctx.db.delete(row._id);
         }
+
+        const snapshotRows = await ctx.db
+            .query("gameSnapshots")
+            .withIndex("by_chat", (q) => q.eq("chatId", args.chatId))
+            .collect();
+        for (const row of snapshotRows) await ctx.db.delete(row._id);
 
         // Delete the agent thread and all its messages if it exists
         if (chat.threadId) {

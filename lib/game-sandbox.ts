@@ -514,12 +514,14 @@ export async function ensureGameSandbox(
 
   const installedNow = await installTemplate(sandbox);
   const hasGame = Boolean(game && (game.files.length > 0 || game.diskEdits.length > 0));
+  const bridgeHealth = await commandOutput(sandbox, "curl -sf http://127.0.0.1:3000/__kayra/health || true");
+  const bridgeNeedsUpgrade = bridgeHealth !== BRIDGE_HEALTH;
   // A fresh template, or a machine still showing the placeholder, does not
   // have this chat's game. Put the committed files on disk before Expo starts.
   const shouldRestore =
     hasGame && (installedNow || (await isHoldingPage(sandbox)));
 
-  if (installedNow || shouldRestore) {
+  if (installedNow || shouldRestore || bridgeNeedsUpgrade) {
     await stopExpo(sandbox);
   }
 

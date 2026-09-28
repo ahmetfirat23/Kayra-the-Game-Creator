@@ -17,6 +17,7 @@ import type * as chat from "../chat.js";
 import type * as config from "../config.js";
 import type * as crons from "../crons.js";
 import type * as crypto from "../crypto.js";
+import type * as gameSnapshots from "../gameSnapshots.js";
 import type * as sandboxCleanup from "../sandboxCleanup.js";
 import type * as sandboxClient from "../sandboxClient.js";
 import type * as sandboxSession from "../sandboxSession.js";
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   config: typeof config;
   crons: typeof crons;
   crypto: typeof crypto;
+  gameSnapshots: typeof gameSnapshots;
   sandboxCleanup: typeof sandboxCleanup;
   sandboxClient: typeof sandboxClient;
   sandboxSession: typeof sandboxSession;

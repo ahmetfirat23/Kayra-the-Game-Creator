@@ -21,6 +21,7 @@ import {
 } from "../../../lib/sandbox-lifecycle";
 import { missingViewerRelease, rejectsNewSandboxField } from "../../../lib/sandbox-compat";
 import { requestViewerId } from "../../../lib/sandbox-viewers";
+import { BRIDGE_HEALTH } from "../../../lib/kayra-bridge.mjs";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -42,9 +43,18 @@ type ThreadPage = {
 /** Replay this chat's last successful commit. Null when no game has been committed. */
 async function committedGame(
   convex: ConvexHttpClient,
+  chatId: Id<"chats">,
   threadId: string | undefined,
 ): Promise<FinishedGame | null> {
   if (!threadId) return null;
+  let snapshot: { files: FinishedGame["files"] } | null = null;
+  try {
+    snapshot = await convex.query(api.gameSnapshots.get, { chatId });
+  } catch (error) {
+    // Vercel may deploy before the matching Convex function. Keep existing
+    // games loadable until the backend deployment catches up.
+    if (!/gameSnapshots:get/i.test(String(error)) || !/not found|could not find|not registered/i.test(String(error))) throw error;
+  }
   const messages: Array<{ parts?: unknown }> = [];
   let cursor: string | null = null;
   for (let pageNumber = 0; pageNumber < 20; pageNumber++) {
@@ -57,7 +67,9 @@ async function committedGame(
     if (result.isDone || !result.continueCursor) break;
     cursor = result.continueCursor;
   }
-  return finishedGameFromUiMessages(messages);
+  const replayed = finishedGameFromUiMessages(messages);
+  if (snapshot) return { files: snapshot.files, diskEdits: [], packages: replayed?.packages ?? [] };
+  return replayed;
 }
 
 type SandboxRequestBody = {
@@ -132,6 +144,11 @@ async function previewProcessHealthy(access: {
 }): Promise<boolean> {
   try {
     const origin = access.previewUrl.replace(/\/$/, "");
+    const health = await fetch(`${origin}/__kayra/health`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!health.ok || (await health.text()).trim() !== BRIDGE_HEALTH) return false;
     const response = await fetch(`${origin}/__kayra/preview-health`, {
       headers: { Authorization: `Bearer ${access.token}` },
       cache: "no-store",
@@ -250,7 +267,7 @@ export async function POST(req: Request) {
       const previewHealthy =
         Boolean(chat?.isAiTurn) || (await previewProcessHealthy(access));
       if (shouldRecoverPreview(Boolean(chat?.isAiTurn), previewHealthy)) {
-        const game = await committedGame(convex, chat?.threadId);
+        const game = await committedGame(convex, chatId, chat?.threadId);
         const ensured = await ensureGameSandbox(chatId, {
           client,
           existingToken: access.token,
@@ -307,7 +324,7 @@ export async function POST(req: Request) {
     // ensure (default)
     const access = await convex.query(api.chat.getSandboxAccess, { chatId });
     const chat = await convex.query(api.chat.getChat, { chatId });
-    const game = await committedGame(convex, chat?.threadId);
+    const game = await committedGame(convex, chatId, chat?.threadId);
     const ensured = await ensureGameSandbox(chatId, {
       client,
       existingToken: access?.token,

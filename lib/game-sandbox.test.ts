@@ -403,6 +403,7 @@ describe("ensureGameSandbox", () => {
     await ensureGameSandbox("chat-abc", { client: fake.client });
 
     const text = JSON.stringify(calls);
+    assert.match(text, /fuser -k 19006\/tcp/);
     assert.match(text, /pkill -f '\[n\]ode \/opt\/kayra-bridge\.mjs'/);
     assert.match(text, /KAYRA_RESTART_EXPO/);
     assert.match(text, /max-old-space-size=1536/);

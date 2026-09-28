@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { brotliCompressSync, gzipSync } from "node:zlib";
 import { describe, it } from "node:test";
 import {
@@ -15,6 +16,7 @@ import {
   expoProxyHeaders,
   fileExcerpt,
   searchCode,
+  snapshotCommittedGame,
   compileErrorText,
   decodePreviewErrorBody,
   currentCompileError,
@@ -32,6 +34,17 @@ import {
   waitForExpoUpShell,
   verifyExpoWebBundle,
 } from "./kayra-bridge.mjs";
+
+it("snapshots the committed file rather than later uncommitted edits", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "kayra-snapshot-"));
+  execFileSync("git", ["init", "-q", root]);
+  const file = path.join(root, "game.tsx");
+  await writeFile(file, "committed game");
+  execFileSync("git", ["-C", root, "add", "game.tsx"]);
+  execFileSync("git", ["-C", root, "-c", "user.name=Test", "-c", "user.email=test@local", "commit", "-qm", "game"]);
+  await writeFile(file, "uncommitted draft");
+  assert.deepEqual(await snapshotCommittedGame(root), [{ path: file, content: "committed game" }]);
+});
 
 it("waits for Expo's web bundle rather than only its open port", async () => {
   let bundleReady = false;
@@ -230,7 +243,7 @@ describe("kayra-bridge refused commands", () => {
     assert.doesNotMatch(RESTART_SCRIPT_PATH, /expo/i);
     assert.match(script, /kayra-restart-preview\.log/);
     assert.match(script, /flock -n \/tmp\/kayra-expo\.lock/);
-    assert.equal(BRIDGE_HEALTH, "ok 19");
+    assert.equal(BRIDGE_HEALTH, "ok 20");
     assert.deepEqual(expoRestartOrder({ KAYRA_RESTART_EXPO: "1" }), ["stop", "start"]);
     assert.deepEqual(expoRestartOrder({}), []);
   });

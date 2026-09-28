@@ -29,7 +29,9 @@ export function safeTemplatePath(input: string): string | null {
 export function applyTextEdits(content: string, edits: TextEdit[]): string {
   let next = content;
   for (const edit of edits) {
-    if (!edit.oldText || !next.includes(edit.oldText)) continue;
+    // The sandbox writes only after every replacement succeeds. A failed
+    // replacement must discard earlier replacements from this same tool call.
+    if (!edit.oldText || !next.includes(edit.oldText)) return content;
     next = next.replace(edit.oldText, edit.newText);
   }
   return next;
@@ -270,7 +272,7 @@ export function finishedGameFromParts(parts: unknown[]): FinishedGame | null {
   if (commitIndex < 0) return null;
 
   const known = new Map<string, string>();
-  const pending = new Map<string, TextEdit[]>();
+  const pending: Array<{ path: string; edits: TextEdit[] }> = [];
   const packages = new Set<string>();
 
   for (const part of tools.slice(0, commitIndex)) {
@@ -287,7 +289,9 @@ export function finishedGameFromParts(parts: unknown[]): FinishedGame | null {
       for (const file of writtenFiles(input)) {
         if (failed.has(file.path)) continue;
         known.set(file.path, file.content);
-        pending.delete(file.path);
+        for (let index = pending.length - 1; index >= 0; index--) {
+          if (pending[index].path === file.path) pending.splice(index, 1);
+        }
       }
       continue;
     }
@@ -307,17 +311,15 @@ export function finishedGameFromParts(parts: unknown[]): FinishedGame | null {
           known.set(file.path, applyTextEdits(current, file.edits));
           continue;
         }
-        const queued = pending.get(file.path) ?? [];
-        queued.push(...file.edits);
-        pending.set(file.path, queued);
+        pending.push(file);
       }
     }
   }
 
-  if (known.size === 0 && pending.size === 0 && packages.size === 0) return null;
+  if (known.size === 0 && pending.length === 0 && packages.size === 0) return null;
   return {
     files: [...known].map(([path, content]) => ({ path, content })),
-    diskEdits: [...pending].map(([path, edits]) => ({ path, edits })),
+    diskEdits: pending,
     packages: [...packages],
   };
 }

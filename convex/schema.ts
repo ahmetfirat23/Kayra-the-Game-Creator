@@ -53,6 +53,12 @@ export default defineSchema({
         appOrigin: v.optional(v.string()),
         viewers: v.optional(v.array(v.object({ id: v.string(), lastSeen: v.number() }))),
     }).index("by_chat", ["chatId"]),
+
+    gameSnapshots: defineTable({
+        chatId: v.id("chats"),
+        files: v.array(v.object({ path: v.string(), content: v.string() })),
+        updatedAt: v.number(),
+    }).index("by_chat", ["chatId"]),
     
     usage: defineTable({
         key: v.string(), // "global"
