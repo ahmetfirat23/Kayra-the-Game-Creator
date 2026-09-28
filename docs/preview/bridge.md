@@ -1,6 +1,6 @@
 # Preview bridge
 
-`lib/kayra-bridge.mjs` runs inside the sandbox on port **3000**. It authenticates tool POSTs, proxies the browser preview to Expo on port **19006**, and strips framing headers so the app can load in Kayra’s iframe. Its preview health check tests whether Expo is listening on that port; bundling can continue after the commit tool returns.
+`lib/kayra-bridge.mjs` runs inside the sandbox on port **3000**. It authenticates tool POSTs, proxies the browser preview to Expo on port **19006**, and strips framing headers so the app can load in Kayra’s iframe. Its preview health check tests whether Expo is listening on that port. A commit additionally waits for Expo's document and complete web bundle before reporting the preview ready.
 
 ## Saved as
 

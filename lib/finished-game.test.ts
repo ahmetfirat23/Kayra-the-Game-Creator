@@ -4,6 +4,7 @@ import {
   applyTextEdits,
   finishedGameFromUiMessages,
   includesGameScreen,
+  latestSuccessfulCommitKey,
   safeTemplatePath,
   successfulCommitCountFromUiMessages,
 } from "./finished-game.ts";
@@ -71,6 +72,30 @@ describe("finishedGameFromUiMessages", () => {
     assert.equal(game, null);
   });
 
+  it("restores writes saved by the server auto-commit", () => {
+    const messages = [{
+      parts: [writePart([{ path: SCREEN, content: "auto committed game" }])],
+      text: "Done.\n\nAuto-commit: Committed changes successfully. Preview restart requested.",
+    }];
+    assert.equal(successfulCommitCountFromUiMessages(messages), 1);
+    assert.equal(finishedGameFromUiMessages(messages)?.files[0]?.content, "auto committed game");
+  });
+
+  it("does not treat an empty commit as a new game", () => {
+    const messages = [{ parts: [writePart([{ path: SCREEN, content: "draft" }]), commitPart("No changes to commit.")] }];
+    assert.equal(successfulCommitCountFromUiMessages(messages), 0);
+    assert.equal(finishedGameFromUiMessages(messages), null);
+  });
+
+  it("saves a committed game without signaling a ready preview when bundling fails", () => {
+    const messages = [{ parts: [
+      writePart([{ path: SCREEN, content: "saved despite preview failure" }]),
+      commitPart("Error committing: Preview did not become ready after the game was committed. Expo bundle returned HTTP 500."),
+    ] }];
+    assert.equal(successfulCommitCountFromUiMessages(messages), 0);
+    assert.equal(finishedGameFromUiMessages(messages)?.files[0]?.content, "saved despite preview failure");
+  });
+
   it("replays a Git commit that an older bridge mislabeled after Expo timed out", () => {
     const game = finishedGameFromUiMessages([{ parts: [
       writePart([{ path: SCREEN, content: "saved game" }]),
@@ -110,6 +135,20 @@ describe("finishedGameFromUiMessages", () => {
     ]);
 
     assert.equal(game?.files[0].content, "color = blue");
+  });
+
+  it("does not replay an edit the sandbox rejected", () => {
+    const game = finishedGameFromUiMessages([{ parts: [
+      writePart([{ path: SCREEN, content: "color = red" }]),
+      {
+        type: "tool-editFiles",
+        state: "output-available",
+        input: { files: [{ path: SCREEN, edits: [{ oldText: "green", newText: "blue" }] }] },
+        output: { _multiFileEdit: true, files: [{ path: SCREEN, success: false, error: "oldText not found" }] },
+      },
+      commitPart(),
+    ] }]);
+    assert.equal(game?.files[0]?.content, "color = red");
   });
 
   it("keeps an edit of a template file for the VM to apply", () => {
@@ -175,6 +214,12 @@ describe("finishedGameFromUiMessages", () => {
 });
 
 describe("successfulCommitCountFromUiMessages", () => {
+  it("identifies a new commit even when the visible count stays the same", () => {
+    const before = [{ id: "old", order: 1, parts: [commitPart()] }];
+    const after = [{ id: "new", order: 2, parts: [commitPart()] }];
+    assert.equal(successfulCommitCountFromUiMessages(before), successfulCommitCountFromUiMessages(after));
+    assert.notEqual(latestSuccessfulCommitKey(before), latestSuccessfulCommitKey(after));
+  });
   it("counts a commit only after its successful output is available", () => {
     assert.equal(
       successfulCommitCountFromUiMessages([

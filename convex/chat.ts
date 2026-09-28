@@ -374,7 +374,7 @@ async function autoCommitIfNeeded(
             arguments: { message: "Auto-commit: Changes made by AI" },
         });
         
-        let commitMessage = "Changes committed automatically";
+        let commitMessage = "Error committing: empty tool response";
         if (Array.isArray(commitResult.content) && commitResult.content.length > 0) {
             const firstContent = commitResult.content[0];
             if (firstContent && 'text' in firstContent) {
@@ -385,8 +385,11 @@ async function autoCommitIfNeeded(
             }
         }
         
-        const textToSave = finalText ? `${finalText}\n\n${commitMessage}` : commitMessage;
-        return { text: textToSave, committed: true };
+        const committed = commitMessage.startsWith("Committed changes successfully.") ||
+            commitMessage.startsWith("Error committing: Preview did not become ready after the game was committed.");
+        const notice = committed ? `Auto-commit: ${commitMessage}` : commitMessage;
+        const textToSave = finalText ? `${finalText}\n\n${notice}` : notice;
+        return { text: textToSave, committed };
     } catch (commitError) {
         console.error("Auto-commit error:", commitError);
         return { text: finalText, committed: false };
@@ -453,7 +456,15 @@ export const processMessage = internalAction({
             const finalText = await result.text;
             
             const tracker = getToolCallTracker();
-            const { text: textToSave } = await autoCommitIfNeeded(mcpClient, tracker, finalText);
+            const { text: textToSave, committed } = await autoCommitIfNeeded(mcpClient, tracker, finalText);
+            if (committed) {
+                const autoCommitLine = textToSave.split("\n").find((line) => line.startsWith("Auto-commit: "));
+                await agent.saveMessage(ctx, {
+                    threadId: args.threadId,
+                    message: { role: "assistant", content: autoCommitLine || "Auto-commit: Committed changes successfully." },
+                    skipEmbeddings: true,
+                });
+            }
             
             await mcpClient.close();
 

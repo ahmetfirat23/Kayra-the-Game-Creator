@@ -8,7 +8,7 @@ import { UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { CONFIG } from "../../convex/config";
 import { compileFixPrompt, isHiddenCompileFix, isPreviewInfrastructureError } from "../../lib/compile-error";
-import { successfulCommitCountFromUiMessages } from "../../lib/finished-game";
+import { latestSuccessfulCommitKey, successfulCommitCountFromUiMessages } from "../../lib/finished-game";
 import {
   previewFrameSrc,
   previewPane,
@@ -51,6 +51,26 @@ function PreviewProgress({ stage }: { stage: PreviewProgressStage }) {
       </div>
     </div>
   );
+}
+
+function GamePreviewFrame({ src, onReady }: { src: string; onReady: () => void }) {
+  const [activeSrc, setActiveSrc] = useState(src);
+  const frames = activeSrc === src ? [src] : [activeSrc, src];
+
+  return frames.map((frameSrc) => (
+    <iframe
+      key={frameSrc}
+      src={frameSrc}
+      title="Game preview"
+      aria-hidden={frameSrc !== activeSrc}
+      className={`absolute inset-0 w-full h-full border-0 bg-[#F0E6FA] dark:bg-[#1A202C] select-none ${frameSrc === activeSrc ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+      onLoad={() => {
+        if (frameSrc !== src) return;
+        if (frameSrc !== activeSrc) setActiveSrc(frameSrc);
+        onReady();
+      }}
+    />
+  ));
 }
 
 export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProps) {
@@ -115,9 +135,10 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
   const [loadingPreviewChatId, setLoadingPreviewChatId] = useState<Id<"chats"> | null>(null);
 
   const successfulCommitCount = successfulCommitCountFromUiMessages(messages);
-  const observedCommits = useRef<{ chatId: Id<"chats"> | null; count: number }>({
+  const latestCommitKey = latestSuccessfulCommitKey(messages);
+  const observedCommits = useRef<{ chatId: Id<"chats"> | null; key: string | null }>({
     chatId: null,
-    count: 0,
+    key: null,
   });
 
   useEffect(() => {
@@ -126,17 +147,17 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
     if (observedCommits.current.chatId !== selectedChatId) {
       observedCommits.current = {
         chatId: selectedChatId,
-        count: successfulCommitCount,
+        key: latestCommitKey,
       };
       return;
     }
 
-    if (successfulCommitCount > observedCommits.current.count) {
+    if (latestCommitKey && latestCommitKey !== observedCommits.current.key) {
       setLoadingPreviewChatId(selectedChatId);
       setPreviewEpoch((epoch) => epoch + 1);
     }
-    observedCommits.current.count = successfulCommitCount;
-  }, [selectedChatId, messagesData, successfulCommitCount]);
+    observedCommits.current.key = latestCommitKey;
+  }, [selectedChatId, messagesData, latestCommitKey]);
 
   const hasCommitted = successfulCommitCount > 0;
   
@@ -966,12 +987,10 @@ export function ChatInterface({ theme, toggleTheme, mounted }: ChatInterfaceProp
           <div className="relative flex-1 bg-gradient-to-br from-[#F0E6FA] via-[#FAFBFC] to-[#E8F4FC] dark:from-[#1A202C] dark:via-[#2D3748] dark:to-[#1A202C] p-0 md:p-6 flex items-center justify-center">
             {pane === "game" && preview?.previewUrl ? (
               <div className="relative w-full h-full rounded-3xl overflow-hidden border-2 border-[#E8F4FC] dark:border-[#4A5568] shadow-[0_8px_32px_rgba(168,212,230,0.2)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
-                <iframe
-                  key={`${preview.previewUrl}-${previewEpoch}`}
+                <GamePreviewFrame
+                  key={selectedChatId}
                   src={previewFrameSrc(preview.previewUrl, previewEpoch)}
-                  title="Game preview"
-                  className="w-full h-full border-0 bg-[#F0E6FA] dark:bg-[#1A202C] select-none"
-                  onLoad={() => setLoadingPreviewChatId((current) => current === selectedChatId ? null : current)}
+                  onReady={() => setLoadingPreviewChatId((current) => current === selectedChatId ? null : current)}
                 />
                 {progressStage && (
                   <div className="pointer-events-none absolute inset-x-3 top-3 z-10 max-w-sm">

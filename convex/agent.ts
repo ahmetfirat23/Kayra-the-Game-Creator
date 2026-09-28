@@ -468,10 +468,14 @@ export function createFreestyleTools(mcpClient: any) {
                         }
                         
                         try {
-                            await mcpClient.callTool({
+                            const result = await mcpClient.callTool({
                                 name: "write_file",
                                 arguments: { path: file.path, content: file.content },
                             });
+                            const response = result.content?.find((item: { type?: string }) => item.type === "text");
+                            if (!response || !("text" in response) || response.text !== `Wrote ${file.path}`) {
+                                throw new Error(response && "text" in response ? String(response.text) : "The sandbox did not confirm the file write.");
+                            }
                             
                             const lines = file.content.split('\n');
                             const lineCount = lines.length;
@@ -512,8 +516,6 @@ export function createFreestyleTools(mcpClient: any) {
             inputSchema: z.object({ }),
             execute: async () => {
                 try {
-                    getToolCallTracker().recordCommit();
-
                     const commitResult = await mcpClient.callTool({
                         name: "git_commit_and_push",
                         arguments: { message: "committed" },
@@ -522,10 +524,14 @@ export function createFreestyleTools(mcpClient: any) {
                     if (Array.isArray(commitResult.content) && commitResult.content.length > 0) {
                         const firstContent = commitResult.content[0];
                         if (firstContent && "text" in firstContent && firstContent.text) {
+                            if (firstContent.text.startsWith("Committed changes successfully.") ||
+                                firstContent.text.startsWith("Error committing: Preview did not become ready after the game was committed.")) {
+                                getToolCallTracker().recordCommit();
+                            }
                             return firstContent.text;
                         }
                     }
-                    return "Committed changes successfully.";
+                    return "Error committing: empty tool response";
                 } catch (error) {
                     console.error("commitAndPush error:", error);
                     return `Error committing: ${error instanceof Error ? error.message : "Unknown error"}`;
@@ -628,6 +634,10 @@ export function createFreestyleTools(mcpClient: any) {
                                         }))
                                     },
                                 });
+                                const response = result.content?.find((item: { type?: string }) => item.type === "text");
+                                if (!response || !("text" in response) || !String(response.text).startsWith(`Edited ${file.path} (`)) {
+                                    throw new Error(response && "text" in response ? String(response.text) : "The sandbox did not confirm the file edit.");
+                                }
                                 
                                 const fileResult: any = { 
                                     path: file.path, 
@@ -679,6 +689,9 @@ export function createFreestyleTools(mcpClient: any) {
                                 if (firstContent && 'text' in firstContent) {
                                     message = firstContent.text || "";
                                 }
+                            }
+                            if (!message.startsWith(`Edited ${file.path} (`)) {
+                                throw new Error(message || "The sandbox did not confirm the file edit.");
                             }
                             
                             const fileResult: any = { 

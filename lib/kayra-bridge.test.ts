@@ -30,7 +30,29 @@ import {
   refusedShell,
   waitForExpoDownShell,
   waitForExpoUpShell,
+  verifyExpoWebBundle,
 } from "./kayra-bridge.mjs";
+
+it("waits for Expo's web bundle rather than only its open port", async () => {
+  let bundleReady = false;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => String(input).includes(".bundle")
+    ? new Response(bundleReady ? "console.log('game')" : "bundling", {
+        status: bundleReady ? 200 : 503,
+        headers: { "content-type": "application/javascript" },
+      })
+    : new Response('<script src="/game-entry.bundle?platform=web"></script>', {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+  try {
+    await assert.rejects(verifyExpoWebBundle("http://localhost:19006"), /HTTP 503/);
+    bundleReady = true;
+    await verifyExpoWebBundle("http://localhost:19006");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 function mockRes() {
   const state: {

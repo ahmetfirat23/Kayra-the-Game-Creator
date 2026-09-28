@@ -99,23 +99,67 @@ function commitSucceeded(part: ToolPart): boolean {
   // Older bridge versions mislabeled a successful Git commit as failed when
   // Expo needed longer to bundle. Those files still need to be replayable.
   if (/^Error committing: Expo did not become ready after the game was committed\./i.test(output)) return true;
-  return !/^Error committing/i.test(output);
+  return /^(Committed changes successfully\.|committed$)/i.test(output);
+}
+
+function commitSaved(part: ToolPart): boolean {
+  return commitSucceeded(part) ||
+    (callSettled(part) &&
+      (toolName(part) === "commitAndPush" || toolName(part) === "git_commit_and_push") &&
+      /^Error committing: Preview did not become ready after the game was committed\./i.test(outputText(part.output)));
+}
+
+function autoCommitSucceeded(message: { text?: unknown }): boolean {
+  return typeof message.text === "string" &&
+    /(?:^|\n)Auto-commit: Committed changes successfully\./.test(message.text);
+}
+
+function autoCommitOutput(message: { text?: unknown }): string | null {
+  if (typeof message.text !== "string") return null;
+  const line = message.text.split("\n").find((entry) => entry.startsWith("Auto-commit: "));
+  return line ? line.slice("Auto-commit: ".length) : null;
 }
 
 /** Number of successful commits currently visible in the UI message history. */
 export function successfulCommitCountFromUiMessages(
-  messages: Array<{ parts?: unknown }>,
+  messages: Array<{ parts?: unknown; text?: unknown }>,
 ): number {
   let count = 0;
   for (const message of messages) {
-    if (!Array.isArray(message.parts)) continue;
-    for (const part of message.parts) {
+    for (const part of Array.isArray(message.parts) ? message.parts : []) {
       if (part && typeof part === "object" && commitSucceeded(part as ToolPart)) {
         count += 1;
       }
     }
+    if (autoCommitSucceeded(message)) count += 1;
   }
   return count;
+}
+
+/** Stable identity of the newest ready commit in a paginated UI window. */
+export function latestSuccessfulCommitKey(
+  messages: Array<{ id?: string; order?: number; stepOrder?: number; parts?: unknown; text?: unknown }>,
+): string | null {
+  let latest: { order: number; stepOrder: number; key: string } | null = null;
+  for (const message of messages) {
+    const parts = Array.isArray(message.parts) ? message.parts : [];
+    for (let index = 0; index < parts.length; index++) {
+      if (!parts[index] || typeof parts[index] !== "object" || !commitSucceeded(parts[index] as ToolPart)) continue;
+      const order = message.order ?? 0;
+      const stepOrder = message.stepOrder ?? 0;
+      if (!latest || order > latest.order || (order === latest.order && stepOrder >= latest.stepOrder)) {
+        latest = { order, stepOrder, key: `${message.id ?? `${order}:${stepOrder}`}:${index}` };
+      }
+    }
+    if (autoCommitSucceeded(message)) {
+      const order = message.order ?? 0;
+      const stepOrder = message.stepOrder ?? 0;
+      if (!latest || order > latest.order || (order === latest.order && stepOrder >= latest.stepOrder)) {
+        latest = { order, stepOrder, key: `${message.id ?? `${order}:${stepOrder}`}:auto` };
+      }
+    }
+  }
+  return latest?.key ?? null;
 }
 
 function failedWritePaths(output: unknown): Set<string> {
@@ -206,6 +250,14 @@ function installSucceeded(part: ToolPart): boolean {
   return !/^Error running npm install/i.test(outputText(part.output));
 }
 
+function editSucceeded(part: ToolPart): boolean {
+  const output = outputText(part.output);
+  if (/^Edited |^edited$/i.test(output)) return true;
+  const record = asRecord(unwrapOutput(part.output));
+  if (!record || !Array.isArray(record.files)) return false;
+  return record.files.some((file) => asRecord(file)?.success === true);
+}
+
 /** Replay settled tool parts up to the last successful commit. */
 export function finishedGameFromParts(parts: unknown[]): FinishedGame | null {
   const tools = parts.filter((part): part is ToolPart => {
@@ -213,7 +265,7 @@ export function finishedGameFromParts(parts: unknown[]): FinishedGame | null {
   });
   let commitIndex = -1;
   for (let index = 0; index < tools.length; index++) {
-    if (commitSucceeded(tools[index])) commitIndex = index;
+    if (commitSaved(tools[index])) commitIndex = index;
   }
   if (commitIndex < 0) return null;
 
@@ -240,7 +292,16 @@ export function finishedGameFromParts(parts: unknown[]): FinishedGame | null {
       continue;
     }
     if (isEdit(name)) {
+      if (!editSucceeded(part)) continue;
+      const editOutput = asRecord(unwrapOutput(part.output));
+      const successfulPaths = editOutput && Array.isArray(editOutput.files)
+        ? new Set(editOutput.files.flatMap((result) => {
+            const file = asRecord(result);
+            return file?.success === true && typeof file.path === "string" ? [file.path] : [];
+          }))
+        : null;
       for (const file of editedFiles(input)) {
+        if (successfulPaths && !successfulPaths.has(file.path)) continue;
         const current = known.get(file.path);
         if (current !== undefined) {
           known.set(file.path, applyTextEdits(current, file.edits));
@@ -262,7 +323,7 @@ export function finishedGameFromParts(parts: unknown[]): FinishedGame | null {
 }
 
 export function finishedGameFromUiMessages(
-  messages: Array<{ parts?: unknown; order?: number; stepOrder?: number }>,
+  messages: Array<{ parts?: unknown; text?: unknown; order?: number; stepOrder?: number }>,
 ): FinishedGame | null {
   // listThreadMessages sorts each page oldest-first, but pages themselves arrive
   // newest-window first. Sort on the message order so a later commit wins.
@@ -274,6 +335,8 @@ export function finishedGameFromUiMessages(
   const parts: unknown[] = [];
   for (const message of chronological) {
     if (Array.isArray(message.parts)) parts.push(...message.parts);
+    const output = autoCommitOutput(message);
+    if (output) parts.push({ type: "tool-commitAndPush", state: "output-available", output });
   }
   return finishedGameFromParts(parts);
 }
